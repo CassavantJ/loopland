@@ -8,6 +8,7 @@ import type { World } from '../sim/world';
 import { Crowd, FACING_ANGLE } from './crowd';
 import {
   cornerGeometry,
+  fenceGeometry,
   pathGeometry,
   terrainGeometry,
   tilesGeometry,
@@ -67,6 +68,7 @@ export class ParkView {
   private terrain: THREE.Mesh;
   private paths: THREE.Mesh;
   private water: THREE.Mesh;
+  private fence: THREE.Mesh;
   private scenery = new THREE.Group();
   /** Path furniture, litter and sick: rebuilt whenever the mess changes. */
   private details = new THREE.Group();
@@ -130,12 +132,15 @@ export class ParkView {
       }),
     );
     this.water.renderOrder = 1;
+    this.fence = new THREE.Mesh(new THREE.BufferGeometry(), vertexColors);
+    this.fence.castShadow = true;
     this.water.receiveShadow = true;
     this.cursor = new THREE.Mesh(new THREE.BufferGeometry(), mat('#ffffff', { transparent: 0.45 }));
     this.cursor.renderOrder = 2;
     this.scene.add(
       this.terrain,
       this.water,
+      this.fence,
       this.paths,
       this.scenery,
       this.details,
@@ -226,6 +231,8 @@ export class ParkView {
       this.terrain.geometry = terrainGeometry(park);
       this.water.geometry.dispose();
       this.water.geometry = waterGeometry(park);
+      this.fence.geometry.dispose();
+      this.fence.geometry = fenceGeometry(park);
       this.version = -1;
     }
     if (park.version === this.version) return;

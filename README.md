@@ -24,8 +24,10 @@ ride models to the guests, is made in code for this game.
   and to paint it; lakes whose water finds its own level; themed scenery; and a beauty map
   that makes nearby rides more exciting and passing guests happier.
 
-It's being built in stages: the park, coasters, staff and research, and landscaping are in;
-scenarios come next.
+- **Scenarios** (`src/sim/scenarios.ts`, `business.ts`): six parks with goals and deadlines
+  (guests and rating, park value, exciting coasters, monthly income) plus a sandbox; loans,
+  marketing campaigns, land to buy, and monthly awards. A test plays the first scenario
+  through to prove it can be won.
 
 Part of [Jake's hub](https://raylmao.com). Scaffolded from the hub's app template, so it shares
 the hub's theme, font and "back to the hub" bar (see `src/hub/`).

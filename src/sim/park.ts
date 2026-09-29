@@ -10,7 +10,9 @@ import {
   type SceneryId,
 } from './catalog';
 import type { CoasterState } from './coasters';
+import type { Award, Campaign } from './business';
 import { newResearch, type Research } from './research';
+import type { Objective } from './scenarios';
 import { cellTile, pieceCells, pieceEnd } from './track';
 import type { Staff } from './staff';
 import { DIRECTIONS, DX, DZ, Terrain, turn, type Direction, type Tile } from './grid';
@@ -91,7 +93,15 @@ export interface Placement {
 }
 
 export type Ledger = Record<
-  'construction' | 'rides' | 'food' | 'entrance' | 'upkeep' | 'wages' | 'research' | 'interest',
+  | 'construction'
+  | 'rides'
+  | 'food'
+  | 'entrance'
+  | 'upkeep'
+  | 'wages'
+  | 'research'
+  | 'marketing'
+  | 'interest',
   number
 >;
 
@@ -103,6 +113,7 @@ export const emptyLedger = (): Ledger => ({
   upkeep: 0,
   wages: 0,
   research: 0,
+  marketing: 0,
   interest: 0,
 });
 
@@ -166,6 +177,20 @@ export class Park {
   staff: Staff[] = [];
   nextStaffId = 1;
   research: Research = newResearch();
+  /** Money borrowed from the bank, and how much it will lend. */
+  loan = 0;
+  maxLoan = 2_000_000;
+  /** Price of a tile of land that's for sale. */
+  landPrice = 20_000;
+  marketing: Campaign[] = [];
+  awards: Award[] = [];
+  scenario = 'sandbox';
+  objective: Objective = { kind: 'none' };
+  outcome: 'playing' | 'won' | 'lost' = 'playing';
+  /** The most rides and shops have taken in a single month. */
+  bestIncome = 0;
+  /** Whether the player has seen the win or lose message. */
+  outcomeSeen = false;
   rides: Ride[] = [];
   nextRideId = 1;
   money: number;
@@ -672,6 +697,42 @@ export class Park {
     return floors;
   }
 
+  acknowledgeOutcome(): void {
+    this.outcomeSeen = true;
+  }
+
+  /** Whether a tile is for sale (it can be bought, but not built on until then). */
+  forSale(x: number, z: number): boolean {
+    return this.inside(x, z) && this.owned[this.index(x, z)] === 2;
+  }
+
+  landSale(
+    x0: number,
+    z0: number,
+    x1: number,
+    z1: number,
+  ): { ok: boolean; reason: string; cost: number; tiles: number } {
+    let tiles = 0;
+    for (let z = z0; z <= z1; z++) {
+      for (let x = x0; x <= x1; x++) if (this.forSale(x, z)) tiles++;
+    }
+    if (tiles === 0) return { ok: false, reason: 'None of this land is for sale.', cost: 0, tiles };
+    const cost = tiles * this.landPrice;
+    if (cost > this.money) return { ok: false, reason: 'Not enough money.', cost, tiles };
+    return { ok: true, reason: '', cost, tiles };
+  }
+
+  buyLand(x0: number, z0: number, x1: number, z1: number): { ok: boolean; reason: string } {
+    const check = this.landSale(x0, z0, x1, z1);
+    if (!check.ok) return check;
+    for (let z = z0; z <= z1; z++) {
+      for (let x = x0; x <= x1; x++) if (this.forSale(x, z)) this.owned[this.index(x, z)] = 1;
+    }
+    this.spend(check.cost, 'construction');
+    this.changed(true);
+    return { ok: true, reason: '' };
+  }
+
   /** Whether water covers any of a tile. */
   underwater(x: number, z: number): boolean {
     if (!this.inside(x, z)) return false;
@@ -864,6 +925,16 @@ export class Park {
       })),
       nextStaffId: this.nextStaffId,
       research: this.research,
+      loan: this.loan,
+      maxLoan: this.maxLoan,
+      landPrice: this.landPrice,
+      marketing: this.marketing,
+      awards: this.awards,
+      scenario: this.scenario,
+      objective: this.objective,
+      outcome: this.outcome,
+      bestIncome: this.bestIncome,
+      outcomeSeen: this.outcomeSeen,
       nextRideId: this.nextRideId,
       money: this.money,
       entranceFee: this.entranceFee,
@@ -901,6 +972,16 @@ export class Park {
     park.nextStaffId = saved.nextStaffId ?? 1;
     // Parks saved before research existed keep everything they had.
     park.research = saved.research ?? newResearch(true);
+    park.loan = saved.loan ?? 0;
+    park.maxLoan = saved.maxLoan ?? 2_000_000;
+    park.landPrice = saved.landPrice ?? 20_000;
+    park.marketing = saved.marketing ?? [];
+    park.awards = saved.awards ?? [];
+    park.scenario = saved.scenario ?? 'sandbox';
+    park.objective = saved.objective ?? { kind: 'none' };
+    park.outcome = saved.outcome ?? 'playing';
+    park.bestIncome = saved.bestIncome ?? 0;
+    park.outcomeSeen = saved.outcomeSeen ?? false;
     park.ledger = { ...emptyLedger(), ...saved.ledger };
     park.nextRideId = saved.nextRideId;
     park.entranceFee = saved.entranceFee;
@@ -941,6 +1022,16 @@ export interface SavedPark {
   staff?: Staff[];
   nextStaffId?: number;
   research?: Research;
+  loan?: number;
+  maxLoan?: number;
+  landPrice?: number;
+  marketing?: Campaign[];
+  awards?: Award[];
+  scenario?: string;
+  objective?: Objective;
+  outcome?: Park['outcome'];
+  bestIncome?: number;
+  outcomeSeen?: boolean;
 }
 
 /** Maintenance fields for a new ride. */
@@ -972,7 +1063,14 @@ function frontTiles(x: number, z: number, width: number, depth: number, facing: 
 }
 
 /** A new park: rolling hills at the edges, a flat middle, an entrance on the south edge. */
-export function createPark(seed = 1, size = 48, everything = true): Park {
+export interface ParkShape {
+  /** How many hills, how tall (in height steps above the plain) and how much stays flat. */
+  hills?: number;
+  peak?: readonly [number, number];
+  flat?: number;
+}
+
+export function createPark(seed = 1, size = 48, everything = true, shape: ParkShape = {}): Park {
   const park = new Park({ width: size, depth: size, seed, money: 2_500_000, name: 'Loopland' });
   park.research = newResearch(everything);
   const { terrain } = park;
@@ -981,13 +1079,13 @@ export function createPark(seed = 1, size = 48, everything = true): Park {
   terrain.corners.fill(base);
   // Hills: raise a few blobs away from the middle, then smooth everything to legal slopes.
   const middle = size / 2;
-  for (let hill = 0; hill < 9; hill++) {
+  for (let hill = 0; hill < (shape.hills ?? 9); hill++) {
     const angle = random.range(0, Math.PI * 2);
     const distance = random.range(size * 0.32, size * 0.5);
     const cx = middle + Math.cos(angle) * distance;
     const cz = middle + Math.sin(angle) * distance;
     const radius = random.range(4, 9);
-    const peak = random.int(3, 9);
+    const peak = random.int(shape.peak?.[0] ?? 3, shape.peak?.[1] ?? 9);
     for (let z = 0; z <= size; z++) {
       for (let x = 0; x <= size; x++) {
         const d = Math.hypot(x - cx, z - cz) / radius;
@@ -1000,7 +1098,7 @@ export function createPark(seed = 1, size = 48, everything = true): Park {
   }
   // Keep the building area and the entrance flat.
   const keep = (x: number, z: number) =>
-    Math.hypot(x - middle, z - middle) < size * 0.33 ||
+    Math.hypot(x - middle, z - middle) < size * (shape.flat ?? 0.33) ||
     (Math.abs(x - park.gate.x) < 5 && z > middle);
   for (let z = 0; z <= size; z++) {
     for (let x = 0; x <= size; x++) if (keep(x, z)) terrain.setCorner(x, z, base);

@@ -46,6 +46,9 @@ const hash = (x: number, z: number) => {
 const GRASS = new THREE.Color('#79c257');
 const GRASS_OUTSIDE = new THREE.Color('#8aa874');
 const LAKE_BED = new THREE.Color('#8c7a52');
+const FOR_SALE = new THREE.Color('#b9c27a');
+const FENCE = new THREE.Color('#8d6e4b');
+const FENCE_TOP = new THREE.Color('#b08a5f');
 const SURFACE_COLOURS = SURFACES.map((surface) => new THREE.Color(surface.colour));
 const WATER = new THREE.Color('#4dabf7');
 const WATER_SIDE = new THREE.Color('#1c7ed6');
@@ -62,7 +65,7 @@ export function terrainGeometry(park: Park): THREE.BufferGeometry {
     for (let x = 0; x < park.width; x++) {
       const owned = park.isOwned(x, z) || park.useAt(x, z) === USE.gate;
       const paint = SURFACE_COLOURS[park.surface[park.index(x, z)] ?? 0] ?? GRASS;
-      color.copy(owned ? paint : GRASS_OUTSIDE);
+      color.copy(owned ? paint : park.forSale(x, z) ? FOR_SALE : GRASS_OUTSIDE);
       // Lake beds are sandy and dim.
       if (park.underwater(x, z)) color.lerp(LAKE_BED, 0.6);
       const shade = (hash(x, z) - 0.5) * 0.06 + ((x + z) % 2 === 0 ? 0.015 : -0.015);
@@ -278,6 +281,42 @@ export function waterGeometry(park: Park): THREE.BufferGeometry {
           WATER_SIDE,
         );
       }
+    }
+  }
+  return out.build();
+}
+
+/** A low wooden fence round the land the park owns. */
+export function fenceGeometry(park: Park): THREE.BufferGeometry {
+  const out = new Builder();
+  const inside = (x: number, z: number) => park.isOwned(x, z) || park.useAt(x, z) === USE.gate;
+  const height = 0.16;
+  const rail = (ax: number, az: number, bx: number, bz: number) => {
+    const ya = park.terrain.corner(ax, az) * HEIGHT_STEP;
+    const yb = park.terrain.corner(bx, bz) * HEIGHT_STEP;
+    // A thin board standing on the edge, seen from both sides, with a top.
+    const inset = 0.02;
+    const nx = bz === az ? 0 : inset;
+    const nz = bx === ax ? 0 : inset;
+    const a0 = { x: ax - nx, y: ya, z: az - nz };
+    const b0 = { x: bx - nx, y: yb, z: bz - nz };
+    const a1 = { x: ax - nx, y: ya + height, z: az - nz };
+    const b1 = { x: bx - nx, y: yb + height, z: bz - nz };
+    const c0 = { x: ax + nx, y: ya, z: az + nz };
+    const d0 = { x: bx + nx, y: yb, z: bz + nz };
+    const c1 = { x: ax + nx, y: ya + height, z: az + nz };
+    const d1 = { x: bx + nx, y: yb + height, z: bz + nz };
+    out.quad(a0, b0, b1, a1, FENCE);
+    out.quad(d0, c0, c1, d1, FENCE);
+    out.quad(a1, b1, d1, c1, FENCE_TOP);
+  };
+  for (let z = 0; z < park.depth; z++) {
+    for (let x = 0; x < park.width; x++) {
+      if (!inside(x, z) || park.useAt(x, z) === USE.gate) continue;
+      if (!inside(x, z - 1)) rail(x, z, x + 1, z);
+      if (!inside(x + 1, z)) rail(x + 1, z, x + 1, z + 1);
+      if (!inside(x, z + 1) && park.useAt(x, z + 1) !== USE.gate) rail(x + 1, z + 1, x, z + 1);
+      if (!inside(x - 1, z)) rail(x, z + 1, x, z);
     }
   }
   return out.build();

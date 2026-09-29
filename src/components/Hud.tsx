@@ -1,8 +1,9 @@
-import { Menu, Pause, Play, Users } from 'lucide-react';
+import { Menu, Pause, Play, Target, Users } from 'lucide-react';
 import { useState } from 'react';
 
 import { money } from '../sim/catalog';
 import type { Message } from '../sim/park';
+import { objectiveStatus } from '../sim/scenarios';
 import type { World } from '../sim/world';
 import styles from './Game.module.css';
 
@@ -20,13 +21,16 @@ export function Hud({
   onSpeed,
   onMenu,
   onMessage,
+  onGoal,
 }: {
   world: World;
   speed: number;
   onSpeed: (speed: number) => void;
   onMenu: () => void;
   onMessage: (message: Message) => void;
+  onGoal: () => void;
 }) {
+  const goal = world.park.objective.kind === 'none' ? null : objectiveStatus(world);
   const park = world.park;
   const latest = park.messages.at(-1);
   const [seen, setSeen] = useState(0);
@@ -54,6 +58,27 @@ export function Hud({
           </span>
         </div>
         <div className={`${styles.stat} ${styles.date}`}>{park.date}</div>
+        {goal && (
+          <button
+            type="button"
+            className={`${styles.stat} ${styles.goal}`}
+            title={goal.progress}
+            data-outcome={park.outcome}
+            onClick={onGoal}
+          >
+            <Target aria-hidden="true" />
+            <span className={styles.ratingBar} aria-hidden="true">
+              <span style={{ width: `${goal.fraction * 100}%` }} />
+            </span>
+            <span>
+              {park.outcome === 'won'
+                ? 'Goal met!'
+                : park.outcome === 'lost'
+                  ? 'Time’s up'
+                  : `Goal ${Math.floor(goal.fraction * 100)}%`}
+            </span>
+          </button>
+        )}
         <div className={styles.speeds} role="group" aria-label="Game speed">
           {SPEEDS.map((option) => (
             <button

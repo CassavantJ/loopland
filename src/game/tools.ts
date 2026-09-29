@@ -31,6 +31,7 @@ export type Tool =
   | { kind: 'land'; mode: LandMode; size: Brush }
   | { kind: 'paint'; surface: number; size: Brush }
   | { kind: 'water'; raise: boolean; size: Brush }
+  | { kind: 'buy'; size: Brush }
   | { kind: 'bulldoze' };
 
 export type Selection =
@@ -345,6 +346,15 @@ export class Interaction {
       const result = this.landEdit(tool, start ?? end, end, true);
       if (!result.ok) this.callbacks.note(result.reason, true);
       else this.callbacks.changed();
+    } else if (tool.kind === 'buy' && end) {
+      const { x0, z0, x1, z1 } = brushRect(end.tile, tool.size);
+      const result = park.buyLand(x0, z0, x1, z1);
+      if (!result.ok) this.callbacks.note(result.reason, true);
+      else {
+        this.quietUntil = performance.now() + 1500;
+        this.callbacks.note('Land bought.');
+        this.callbacks.changed();
+      }
     } else if (tool.kind === 'water' && end) {
       const { x0, z0, x1, z1 } = brushRect(end.tile, tool.size);
       const result = park.editWater(x0, z0, x1, z1, tool.raise);
@@ -512,6 +522,16 @@ export class Interaction {
           const check = park.waterCheck(x0, z0, x1, z1, tool.raise);
           preview = { kind: 'tiles', tiles: rectTiles(x0, z0, x1, z1), ok: check.ok };
           this.hint(check.ok ? money(check.cost) : check.reason, !check.ok);
+          break;
+        }
+        case 'buy': {
+          const { x0, z0, x1, z1 } = brushRect(pick.tile, tool.size);
+          const check = park.landSale(x0, z0, x1, z1);
+          preview = { kind: 'tiles', tiles: rectTiles(x0, z0, x1, z1), ok: check.ok };
+          this.hint(
+            check.ok ? `${check.tiles} tiles: ${money(check.cost)}` : check.reason,
+            !check.ok,
+          );
           break;
         }
         case 'paint': {

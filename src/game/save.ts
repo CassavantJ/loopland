@@ -1,4 +1,5 @@
-import { createPark, Park, type SavedPark } from '../sim/park';
+import { Park, type SavedPark } from '../sim/park';
+import { createScenario, SCENARIOS, type ScenarioDef } from '../sim/scenarios';
 
 const KEY = 'loopland.park.v1';
 
@@ -44,7 +45,30 @@ export function clearSave(store: Pick<Storage, 'removeItem'> | null = storage())
   }
 }
 
-export function newPark(): Park {
-  // A fresh park starts with a few rides; research invents the rest.
-  return createPark(Math.floor(Math.random() * 1_000_000) + 1, 48, false);
+/** A scenario's park, fresh. With no scenario given, the first (easiest) one. */
+export function newPark(def: ScenarioDef | undefined = SCENARIOS[0]): Park {
+  if (!def) throw new Error('no scenarios');
+  return createScenario(def);
+}
+
+const PROGRESS = 'loopland.progress.v1';
+
+/** Scenarios the player has completed. */
+export function loadProgress(store: Pick<Storage, 'getItem'> | null = storage()): string[] {
+  try {
+    const raw: unknown = JSON.parse(store?.getItem(PROGRESS) ?? '[]');
+    return Array.isArray(raw) ? raw.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+export function markCompleted(id: string, store: Storage | null = storage()): void {
+  const done = loadProgress(store);
+  if (done.includes(id)) return;
+  try {
+    store?.setItem(PROGRESS, JSON.stringify([...done, id]));
+  } catch {
+    // Private browsing: forget it.
+  }
 }

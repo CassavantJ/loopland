@@ -14,10 +14,20 @@ import {
   type Guest,
 } from './guests';
 import { beautyMap, sceneryBonus } from './beauty';
-import { dropJob, guarded, inspectionDue, itemAt, itemSide, updateStaff } from './crew';
+import { advertisedRide, arrivalBoost, campaignActive, monthlyBusiness } from './business';
+import {
+  dropJob,
+  guarded,
+  inspectionDue,
+  itemAt,
+  itemSide,
+  mechanicSpot,
+  updateStaff,
+} from './crew';
 import { Navigator } from './navigation';
 import { BIN_CAPACITY, emptyLedger, MONTHS, USE, type Park, type Ride } from './park';
 import { currentProject, FUNDING, researchDay } from './research';
+import { checkObjective } from './scenarios';
 import { makeStaff, STAFF, type Staff, type StaffRole } from './staff';
 
 /** Game seconds per simulation step. */
@@ -115,6 +125,10 @@ export class World {
     if (ride.broken) {
       const coming = this.claims.has(`ride:${ride.id}`);
       const mechanics = this.park.staff.some((staff) => staff.role === 'mechanic');
+      const spot = mechanicSpot(this, ride);
+      if (!spot || this.nav.distance(this.gateInside, spot) < 0) {
+        return 'Broken down, and mechanics can’t reach it: connect its exit to a path.';
+      }
       return coming
         ? 'Broken down. A mechanic is on the way.'
         : mechanics
@@ -173,10 +187,13 @@ export class World {
     const cap = 30 + rides * 55 + stalls * 8;
     if (this.guests.length >= cap) return;
     const fair = 500 + rides * 350;
-    const fee = park.entranceFee;
+    // Half-price vouchers halve the fee, and bring in more people.
+    const fee = campaignActive(park, 'vouchers')
+      ? Math.round(park.entranceFee / 2)
+      : park.entranceFee;
     const priceFactor = fee <= fair ? 1 : Math.max(0.05, 1 - ((fee - fair) / fair) * 0.9);
     const rate = (0.05 + rides * 0.06 + stalls * 0.008) * (0.4 + park.rating / 800) * priceFactor;
-    if (!park.random.chance(rate * dt)) return;
+    if (!park.random.chance(rate * arrivalBoost(park) * dt)) return;
 
     const guest = makeGuest(this.nextGuestId++, park.gate, 0, park.time, park.random);
     if (guest.money < fee) return;
@@ -539,9 +556,12 @@ export class World {
       const distance = this.nav.distance(guest.from, target);
       if (distance < 0 || (!guest.hasMap && distance > 34)) continue;
       const again = guest.ridden.includes(ride.id) ? 2 : 0;
+      // Guests who saw the adverts want to try it (until they have).
+      const advert = advertisedRide(park) === ride.id && !guest.ridden.includes(ride.id) ? 2 : 0;
       const pricey = ride.price > fairPrice(ride) * 1.4 ? 1.5 : 0;
       const score =
-        spec.excitement * fit -
+        spec.excitement * fit +
+        advert -
         distance * 0.04 -
         again -
         pricey -
@@ -914,6 +934,7 @@ export class World {
       park.touch();
     }
     this.updateCleanliness();
+    checkObjective(this);
     const guests = this.guests.length;
     const happiness =
       guests > 0 ? this.guests.reduce((sum, guest) => sum + guest.happiness, 0) / guests : 0.6;
@@ -928,7 +949,8 @@ export class World {
       Math.min(1, rides / 10) * 260 -
       (1 - this.cleanliness) * 220 -
       broken * 35 -
-      smashed * 6;
+      smashed * 6 +
+      park.awards.length * 30;
     park.rating = Math.round(
       Math.min(999, Math.max(0, park.rating + (target - park.rating) * 0.15)),
     );
@@ -963,6 +985,7 @@ export class World {
     // Research only costs money while there's something left to invent.
     const research = currentProject(park.research) ? FUNDING[park.research.funding].cost : 0;
     if (research > 0) park.spend(research, 'research');
+    park.bestIncome = Math.max(park.bestIncome, park.ledger.rides + park.ledger.food);
     park.history.push({
       month: finished,
       ledger: park.ledger,
@@ -980,6 +1003,9 @@ export class World {
       ride.monthCustomers = 0;
       ride.downtime = 0;
     }
+    // The new month's bills: interest and marketing; and this month's awards.
+    monthlyBusiness(this);
+    checkObjective(this);
   }
 }
 

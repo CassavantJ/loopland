@@ -19,6 +19,7 @@ import { MONTHS, type Ledger } from '../sim/park';
 import type { World } from '../sim/world';
 import styles from './Game.module.css';
 import type { GhostHandler } from './Builder';
+import { Finance, Goal } from './Business';
 import { ResearchPanel, StaffInfo, StaffPanel } from './Crew';
 import { GuestInfo, RideInfo } from './Info';
 
@@ -51,7 +52,7 @@ interface Props {
   onClose: () => void;
   onFocus: (x: number, z: number) => void;
   onSelect: (selection: Selection) => void;
-  onNewPark: () => void;
+  onNewGame: () => void;
   onSave: () => boolean;
   onGhost: GhostHandler;
 }
@@ -137,6 +138,7 @@ const LEDGER_NAMES: Record<keyof Ledger, string> = {
   upkeep: 'Ride running costs',
   wages: 'Staff wages',
   research: 'Research',
+  marketing: 'Marketing',
   interest: 'Loan interest',
 };
 
@@ -164,7 +166,6 @@ function LedgerTable({ ledger }: { ledger: Ledger }) {
 export function Panels(props: Props) {
   const { world, panel, selection, tool, onTool, onClose } = props;
   const park = world.park;
-  const [confirmNew, setConfirmNew] = useState(false);
   const [saved, setSaved] = useState('');
   const [theme, setTheme] = useState<Theme>('nature');
 
@@ -245,20 +246,25 @@ export function Panels(props: Props) {
                     ? tool.raise
                       ? 'Raise water'
                       : 'Lower water'
-                    : 'Bulldozer';
+                    : tool.kind === 'buy'
+                      ? 'Buy land'
+                      : 'Bulldozer';
     const hint =
       tool.kind === 'path'
         ? `${props.touch ? 'Drag' : 'Click and drag'} to lay a straight line.`
         : tool.kind === 'ride'
           ? `${props.touch ? 'Tap' : 'Click'} to build. Entrance faces ${FACINGS[props.facing] ?? 'south'}.`
-          : tool.kind === 'land' || tool.kind === 'water'
+          : tool.kind === 'land' || tool.kind === 'water' || tool.kind === 'buy'
             ? `${props.touch ? 'Tap' : 'Click'} ${tool.kind === 'land' && tool.size === 0 ? 'a corner of a tile' : 'the land'}.${tool.kind === 'land' && tool.mode === 'level' ? ' Levels to where you start.' : ''}`
             : `${props.touch ? 'Tap or drag' : 'Click or drag'} to ${tool.kind === 'bulldoze' ? 'clear tiles' : 'place'}.`;
     return (
       <div className={styles.placing} role="status">
         <strong>{name}</strong>
         <span>{hint}</span>
-        {(tool.kind === 'land' || tool.kind === 'water' || tool.kind === 'paint') && (
+        {(tool.kind === 'land' ||
+          tool.kind === 'water' ||
+          tool.kind === 'paint' ||
+          tool.kind === 'buy') && (
           <span className={styles.brushes} role="group" aria-label="Brush size">
             {BRUSHES.filter((size) => size > 0 || tool.kind === 'land').map((size) => (
               <button
@@ -389,6 +395,23 @@ export function Panels(props: Props) {
               </button>
             ))}
           </div>
+          {park.owned.includes(2) && (
+            <>
+              <h3 className={styles.subhead}>Buy land</h3>
+              <p className={styles.small}>
+                Land marked out beyond the fence is for sale at {money(park.landPrice)} a tile.
+              </p>
+              <button
+                type="button"
+                className={styles.toggle}
+                onClick={() => {
+                  onTool({ kind: 'buy', size: 3 });
+                }}
+              >
+                Buy land
+              </button>
+            </>
+          )}
           <h3 className={styles.subhead}>Paint the ground</h3>
           <ul className={styles.surfaces}>
             {SURFACES.map((surface, index) => (
@@ -464,6 +487,7 @@ export function Panels(props: Props) {
       const top = [...thoughts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
       return (
         <Panel title={park.name} onClose={onClose}>
+          <Goal world={world} />
           <div className={styles.price}>
             <span id="entrance-fee">Entrance fee</span>
             <button
@@ -563,6 +587,7 @@ export function Panels(props: Props) {
           <p className={styles.bigNumber} data-negative={park.money < 0 || undefined}>
             {money(park.money)}
           </p>
+          <Finance world={world} />
           <h3 className={styles.subhead}>This month</h3>
           <LedgerTable ledger={park.ledger} />
           {last && (
@@ -591,32 +616,9 @@ export function Panels(props: Props) {
               {saved || 'The park also saves itself every month.'}
             </span>
           </div>
-          {confirmNew ? (
-            <div className={styles.row}>
-              <button type="button" className={styles.danger} onClick={props.onNewPark}>
-                Start a new park
-              </button>
-              <button
-                type="button"
-                className={styles.link}
-                onClick={() => {
-                  setConfirmNew(false);
-                }}
-              >
-                Keep this one
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              className={styles.link}
-              onClick={() => {
-                setConfirmNew(true);
-              }}
-            >
-              New park…
-            </button>
-          )}
+          <button type="button" className={styles.link} onClick={props.onNewGame}>
+            New game…
+          </button>
           <h3 className={styles.subhead}>How to play</h3>
           <ul className={styles.help}>
             <li>

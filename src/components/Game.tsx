@@ -1,6 +1,8 @@
 import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from 'react';
 
-import { savePark } from '../game/save';
+import { markCompleted, savePark } from '../game/save';
+import { describeObjective, scenario, type ScenarioDef } from '../sim/scenarios';
+import { OutcomeDialog } from './Scenarios';
 import { buildDesign, placeCoaster } from '../sim/coasters';
 import { Interaction, type Selection, type Tool } from '../game/tools';
 import type { Park } from '../sim/park';
@@ -34,7 +36,18 @@ export interface Note {
   id: number;
 }
 
-export function Game({ park, onNewPark }: { park: Park; onNewPark: () => void }) {
+export function Game({
+  park,
+  paused,
+  onNewGame,
+  onStart,
+}: {
+  park: Park;
+  /** Held still while a menu over the whole game is open. */
+  paused: boolean;
+  onNewGame: () => void;
+  onStart: (def: ScenarioDef) => void;
+}) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [world] = useState(() => new World(park));
   const view = useRef<ParkView | null>(null);
@@ -63,9 +76,12 @@ export function Game({ park, onNewPark }: { park: Park; onNewPark: () => void })
     );
   });
 
+  // The clock stops while a menu covers the game, or the scenario's result is showing.
+  const outcome = world.park.outcome;
+  const showOutcome = outcome !== 'playing' && !world.park.outcomeSeen && !paused;
   useEffect(() => {
-    speedRef.current = speed;
-  }, [speed]);
+    speedRef.current = paused || showOutcome ? 0 : speed;
+  }, [speed, paused, showOutcome]);
   useEffect(() => {
     followRef.current =
       following && (selection?.kind === 'guest' || selection?.kind === 'staff')
@@ -160,6 +176,13 @@ export function Game({ park, onNewPark }: { park: Park; onNewPark: () => void })
       interaction.current = null;
     };
   }, [world]);
+
+  // A finished scenario: record it and save.
+  useEffect(() => {
+    if (outcome === 'playing') return;
+    if (outcome === 'won') markCompleted(world.park.scenario);
+    savePark(world.park);
+  }, [outcome, world]);
 
   // Autosave at the start of every month.
   const month = world.park.month;
@@ -277,6 +300,10 @@ export function Game({ park, onNewPark }: { park: Park; onNewPark: () => void })
           if (message.ride !== undefined) setSelection({ kind: 'ride', id: message.ride });
           else if (message.guest !== undefined) setSelection({ kind: 'guest', id: message.guest });
         }}
+        onGoal={() => {
+          setSelection(null);
+          setPanel('park');
+        }}
       />
       <div className={styles.viewControls}>
         <button
@@ -338,7 +365,7 @@ export function Game({ park, onNewPark }: { park: Park; onNewPark: () => void })
         }}
         onFocus={(x, z) => view.current?.focus(x, z)}
         onSelect={setSelection}
-        onNewPark={onNewPark}
+        onNewGame={onNewGame}
         onSave={() => savePark(world.park)}
         onGhost={(ghost) => {
           const ride = selection?.kind === 'ride' ? world.park.ride(selection.id) : undefined;
@@ -357,6 +384,25 @@ export function Game({ park, onNewPark }: { park: Park; onNewPark: () => void })
           setPanel(panel === next ? null : next);
         }}
       />
+      {showOutcome && (
+        <OutcomeDialog
+          won={outcome === 'won'}
+          name={world.park.name}
+          goal={describeObjective(world.park.objective)}
+          onContinue={() => {
+            world.park.acknowledgeOutcome();
+            setSpeed(1);
+          }}
+          onRetry={() => {
+            const def = scenario(world.park.scenario);
+            if (def) onStart(def);
+          }}
+          onPick={() => {
+            world.park.acknowledgeOutcome();
+            onNewGame();
+          }}
+        />
+      )}
     </main>
   );
 }
