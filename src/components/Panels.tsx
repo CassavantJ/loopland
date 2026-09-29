@@ -3,6 +3,7 @@ import { useState, type ReactNode } from 'react';
 
 import type { Selection, Tool } from '../game/tools';
 import {
+  COASTERS,
   money,
   PATH_ITEMS,
   RIDE_TYPES,
@@ -14,6 +15,7 @@ import {
 import { MONTHS, type Ledger } from '../sim/park';
 import type { World } from '../sim/world';
 import styles from './Game.module.css';
+import type { GhostHandler } from './Builder';
 import { GuestInfo, RideInfo } from './Info';
 
 export type PanelId = 'rides' | 'shops' | 'scenery' | 'land' | 'park' | 'money' | 'menu';
@@ -36,6 +38,7 @@ interface Props {
   onSelect: (selection: Selection) => void;
   onNewPark: () => void;
   onSave: () => boolean;
+  onGhost: GhostHandler;
 }
 
 function Panel({
@@ -95,8 +98,10 @@ function Catalog({
                 <strong>{item.name}</strong>
                 <small>{item.blurb}</small>
                 <small>
-                  {money(item.cost)} · {item.width}×{item.depth}
-                  {item.kind === 'ride' ? ` · excitement ${item.excitement.toFixed(1)}` : ''}
+                  {money(item.cost)}
+                  {item.coaster
+                    ? ' · design your own track'
+                    : ` · ${item.width}×${item.depth}${item.kind === 'ride' ? ` · excitement ${item.excitement.toFixed(1)}` : ''}`}
                 </small>
               </span>
             </button>
@@ -148,8 +153,18 @@ export function Panels(props: Props) {
     const ride = park.ride(selection.id);
     if (ride) {
       return (
-        <Panel title={ride.name} onClose={onClose}>
-          <RideInfo world={world} ride={ride} onFocus={props.onFocus} onClosePanel={onClose} />
+        <Panel
+          key={`${ride.id}:${ride.coaster ? String(ride.coaster.complete) : ''}`}
+          title={ride.name}
+          onClose={onClose}
+        >
+          <RideInfo
+            world={world}
+            ride={ride}
+            onFocus={props.onFocus}
+            onClosePanel={onClose}
+            onGhost={props.onGhost}
+          />
         </Panel>
       );
     }
@@ -223,6 +238,9 @@ export function Panels(props: Props) {
     case 'rides':
       return (
         <Panel title="Rides" onClose={onClose}>
+          <h3 className={styles.subhead}>Roller coasters</h3>
+          <Catalog items={COASTERS} world={world} tool={tool} onTool={onTool} />
+          <h3 className={styles.subhead}>Flat rides</h3>
           <Catalog items={RIDES} world={world} tool={tool} onTool={onTool} />
         </Panel>
       );

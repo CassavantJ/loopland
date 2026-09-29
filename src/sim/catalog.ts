@@ -5,6 +5,8 @@
  * nausea how likely it is to turn stomachs. Guests each like a band of intensity.
  */
 
+import type { CoasterType } from './coaster';
+
 export type RideKind = 'ride' | 'stall';
 
 export type RideTypeId =
@@ -15,6 +17,9 @@ export type RideTypeId =
   | 'drop-tower'
   | 'bumper-cars'
   | 'haunted-house'
+  | 'junior-coaster'
+  | 'wooden-coaster'
+  | 'steel-coaster'
   | 'burger-stall'
   | 'drink-stall'
   | 'ice-cream-stall'
@@ -47,6 +52,10 @@ export interface RideType {
   sells?: Item;
   /** Colours for the model. */
   colours: readonly string[];
+  /** Roller coasters: how their trains behave. Ratings come from a test run instead. */
+  coaster?: CoasterType;
+  /** Ready-made layout for coasters. */
+  design?: 'junior' | 'wooden' | 'steel';
 }
 
 export const RIDE_TYPES: Record<RideTypeId, RideType> = {
@@ -169,6 +178,90 @@ export const RIDE_TYPES: Record<RideTypeId, RideType> = {
     nausea: 1.0,
     colours: ['#5f3dc4', '#343a40', '#b2f2bb'],
   },
+  'junior-coaster': {
+    id: 'junior-coaster',
+    kind: 'ride',
+    name: 'Junior Coaster',
+    blurb: 'A gentle little coaster for younger thrill-seekers. No steep drops, no loops.',
+    width: 3,
+    depth: 1,
+    cost: 50_000,
+    upkeep: 4_000,
+    price: 150,
+    capacity: 12,
+    duration: 40,
+    excitement: 0,
+    intensity: 0,
+    nausea: 0,
+    colours: ['#fab005', '#1c7ed6', '#ffffff'],
+    coaster: {
+      cars: 3,
+      seatsPerCar: 4,
+      friction: 0.018,
+      drag: 0.004,
+      carSpacing: 0.9,
+      loops: false,
+      steep: false,
+      boosters: false,
+    },
+    design: 'junior',
+  },
+  'wooden-coaster': {
+    id: 'wooden-coaster',
+    kind: 'ride',
+    name: 'Wooden Coaster',
+    blurb: 'A rattling timber classic, full of airtime hills and big drops.',
+    width: 3,
+    depth: 1,
+    cost: 90_000,
+    upkeep: 7_000,
+    price: 250,
+    capacity: 12,
+    duration: 60,
+    excitement: 0,
+    intensity: 0,
+    nausea: 0,
+    colours: ['#c92a2a', '#8d5a3b', '#f1e3c8'],
+    coaster: {
+      cars: 3,
+      seatsPerCar: 4,
+      friction: 0.022,
+      drag: 0.005,
+      carSpacing: 0.9,
+      loops: false,
+      steep: true,
+      boosters: false,
+    },
+    design: 'wooden',
+  },
+  'steel-coaster': {
+    id: 'steel-coaster',
+    kind: 'ride',
+    name: 'Looping Coaster',
+    blurb: 'Smooth steel track that can turn you upside down with loops and boosters.',
+    width: 3,
+    depth: 1,
+    cost: 120_000,
+    upkeep: 8_000,
+    price: 300,
+    capacity: 12,
+    duration: 60,
+    excitement: 0,
+    intensity: 0,
+    nausea: 0,
+    colours: ['#1c7ed6', '#e9ecef', '#fa5252'],
+    coaster: {
+      cars: 3,
+      seatsPerCar: 4,
+      friction: 0.014,
+      drag: 0.003,
+      carSpacing: 0.9,
+      loops: true,
+      steep: true,
+      boosters: true,
+    },
+    design: 'steel',
+  },
   'burger-stall': {
     id: 'burger-stall',
     kind: 'stall',
@@ -278,7 +371,10 @@ export const RIDE_TYPES: Record<RideTypeId, RideType> = {
   },
 };
 
-export const RIDES = Object.values(RIDE_TYPES).filter((type) => type.kind === 'ride');
+export const RIDES = Object.values(RIDE_TYPES).filter(
+  (type) => type.kind === 'ride' && !type.coaster,
+);
+export const COASTERS = Object.values(RIDE_TYPES).filter((type) => type.coaster);
 export const STALLS = Object.values(RIDE_TYPES).filter((type) => type.kind === 'stall');
 
 export type SceneryId =

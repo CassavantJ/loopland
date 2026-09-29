@@ -660,3 +660,86 @@
     min-width: 3.1rem;
   }
 }
+
+/* Coaster builder ----------------------------------------------------------------------------- */
+
+.builder {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.pieces {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(4.6rem, 1fr));
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+.piece {
+  display: grid;
+  justify-items: center;
+  gap: 0.15rem;
+  min-height: 4rem;
+  padding: 0.35rem 0.25rem;
+  border: 2px solid rgb(29 26 42 / 0.15);
+  border-radius: 0.7rem;
+  background: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.15;
+  text-align: center;
+}
+
+.piece:hover:not([aria-disabled='true']),
+.piece:focus-visible {
+  border-color: var(--ink);
+  background: #fff3bf;
+}
+
+.piece[aria-disabled='true'] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pieceIcon {
+  width: 1.7rem;
+  height: 1.7rem;
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.bankLine {
+  stroke: #e8590c;
+  stroke-width: 1.8;
+}
+
+.note2 {
+  min-height: 1.2em;
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #862e9c;
+}
+
+.warning p {
+  margin: 0 0 0.3rem;
+}
+
+.toggle:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.primaryAction {
+  justify-self: start;
+  min-height: 2.6rem;
+  padding: 0 1.2rem;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: #8ce99a;
+  font-weight: 900;
+  box-shadow: 0 3px 0 var(--ink);
+}

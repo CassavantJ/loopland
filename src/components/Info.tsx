@@ -10,9 +10,10 @@ import {
 import { useState } from 'react';
 
 import { money, RIDE_TYPES } from '../sim/catalog';
-import { fairPrice, type Guest } from '../sim/guests';
+import { fairPrice, ratingsOf, type Guest } from '../sim/guests';
 import type { Ride } from '../sim/park';
 import type { World } from '../sim/world';
+import { CoasterResults, TrackBuilder, type GhostHandler } from './Builder';
 import styles from './Game.module.css';
 
 function Bar({ label, value, tone }: { label: string; value: number; tone?: 'good' | 'bad' }) {
@@ -40,18 +41,28 @@ export function RideInfo({
   ride,
   onFocus,
   onClosePanel,
+  onGhost,
 }: {
   world: World;
   ride: Ride;
   onFocus: (x: number, z: number) => void;
   onClosePanel: () => void;
+  onGhost: GhostHandler;
 }) {
-  const park = world.park;
   const spec = RIDE_TYPES[ride.type];
-  const [confirm, setConfirm] = useState(false);
   const [, refresh] = useState(0);
   const problem = world.problem(ride);
   const fair = fairPrice(ride);
+  const ratings = ratingsOf(ride);
+  if (ride.coaster && !ride.coaster.complete) {
+    return (
+      <>
+        <p className={styles.blurb}>{spec.blurb}</p>
+        <TrackBuilder world={world} ride={ride} onGhost={onGhost} />
+        <DemolishButton world={world} ride={ride} onClosePanel={onClosePanel} />
+      </>
+    );
+  }
   const setPrice = (price: number) => {
     world.setPrice(ride, price);
     refresh((value) => value + 1);
@@ -147,63 +158,79 @@ export function RideInfo({
         )}
       </dl>
 
-      {spec.kind === 'ride' && (
+      {ride.coaster && <CoasterResults world={world} ride={ride} />}
+      {spec.kind === 'ride' && (!ride.coaster || ride.coaster.stats) && (
         <dl className={styles.ratings}>
           <div>
             <dt>Excitement</dt>
             <dd>
-              {spec.excitement.toFixed(1)} <small>({level(spec.excitement)})</small>
+              {ratings.excitement.toFixed(1)} <small>({level(ratings.excitement)})</small>
             </dd>
           </div>
           <div>
             <dt>Intensity</dt>
             <dd>
-              {spec.intensity.toFixed(1)} <small>({level(spec.intensity)})</small>
+              {ratings.intensity.toFixed(1)} <small>({level(ratings.intensity)})</small>
             </dd>
           </div>
           <div>
             <dt>Nausea</dt>
             <dd>
-              {spec.nausea.toFixed(1)} <small>({level(spec.nausea)})</small>
+              {ratings.nausea.toFixed(1)} <small>({level(ratings.nausea)})</small>
             </dd>
           </div>
         </dl>
       )}
 
-      {confirm ? (
-        <div className={styles.row}>
-          <button
-            type="button"
-            className={styles.danger}
-            onClick={() => {
-              park.demolish(ride.x, ride.z);
-              onClosePanel();
-            }}
-          >
-            Demolish for {money(spec.cost / 2)} back
-          </button>
-          <button
-            type="button"
-            className={styles.link}
-            onClick={() => {
-              setConfirm(false);
-            }}
-          >
-            Keep it
-          </button>
-        </div>
-      ) : (
-        <button
-          type="button"
-          className={styles.link}
-          onClick={() => {
-            setConfirm(true);
-          }}
-        >
-          Demolish…
-        </button>
-      )}
+      <DemolishButton world={world} ride={ride} onClosePanel={onClosePanel} />
     </>
+  );
+}
+
+function DemolishButton({
+  world,
+  ride,
+  onClosePanel,
+}: {
+  world: World;
+  ride: Ride;
+  onClosePanel: () => void;
+}) {
+  const [confirm, setConfirm] = useState(false);
+  const park = world.park;
+  const refund = park.removalRefund(ride.x, ride.z);
+  return confirm ? (
+    <div className={styles.row}>
+      <button
+        type="button"
+        className={styles.danger}
+        onClick={() => {
+          park.demolish(ride.x, ride.z);
+          onClosePanel();
+        }}
+      >
+        Demolish for {money(refund)} back
+      </button>
+      <button
+        type="button"
+        className={styles.link}
+        onClick={() => {
+          setConfirm(false);
+        }}
+      >
+        Keep it
+      </button>
+    </div>
+  ) : (
+    <button
+      type="button"
+      className={styles.link}
+      onClick={() => {
+        setConfirm(true);
+      }}
+    >
+      Demolish…
+    </button>
   );
 }
 

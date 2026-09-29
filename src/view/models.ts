@@ -515,8 +515,22 @@ export function gateModel(name: string): THREE.Group {
   return group;
 }
 
+/** Placeholder for a coaster station while placing it: a platform and canopy, 3 × 1. */
+function stationPreview(colors: readonly string[]): Model {
+  const group = new THREE.Group();
+  group.add(box(3, 0.12, 0.9, '#ced4da'));
+  group.add(box(2.9, 0.08, 0.16, colors[1] ?? '#495057', 0, 0.12, -0.1));
+  group.add(box(2.9, 0.08, 0.16, colors[1] ?? '#495057', 0, 0.12, 0.1));
+  for (const x of [-1.3, 1.3]) {
+    for (const z of [-0.4, 0.4]) group.add(box(0.06, 1.1, 0.06, '#868e96', x, 0, z));
+  }
+  group.add(box(3, 0.08, 1.1, colors[0] ?? '#e03131', 0, 1.1));
+  return { group };
+}
+
 export function rideModel(ride: Ride): Model {
   const spec = RIDE_TYPES[ride.type];
+  if (spec.coaster) return stationPreview(spec.colours);
   switch (ride.type) {
     case 'carousel':
       return carousel(spec.colours);

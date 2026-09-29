@@ -8,6 +8,7 @@ import {
   type SceneryId,
 } from '../sim/catalog';
 import { DX, DZ, type Direction, type Tile } from '../sim/grid';
+import { placeCoaster } from '../sim/coasters';
 import { USE } from '../sim/park';
 import type { World } from '../sim/world';
 import type { ParkView, Pick, Preview } from '../view/ParkView';
@@ -30,6 +31,8 @@ export interface ToolCallbacks {
   note: (text: string, bad?: boolean) => void;
   /** Money was spent or the park changed, so the HUD should refresh. */
   changed: () => void;
+  /** Building finished, so go back to inspecting (after a coaster's station). */
+  done: () => void;
   /** The thing being placed turned (by the player, or to face a path). */
   faced: (facing: Direction) => void;
 }
@@ -299,16 +302,24 @@ export class Interaction {
         this.callbacks.note(plan.reason, true);
         return;
       }
-      const ride = park.placeRide(tool.type, at.x, at.z, this.facing);
+      const ride = RIDE_TYPES[tool.type].coaster
+        ? placeCoaster(park, tool.type, at.x, at.z, this.facing)
+        : park.placeRide(tool.type, at.x, at.z, this.facing);
       if (ride) {
         this.quietUntil = performance.now() + 2500;
         const spec = RIDE_TYPES[tool.type];
         this.callbacks.note(
-          spec.kind === 'ride'
-            ? `${ride.name} built for ${money(plan.cost)}. Connect its entrance and exit to a path.`
-            : `${ride.name} built for ${money(plan.cost)}.`,
+          spec.coaster
+            ? `${ride.name}’s station is down. Now build the track.`
+            : spec.kind === 'ride'
+              ? `${ride.name} built for ${money(plan.cost)}. Connect its entrance and exit to a path.`
+              : `${ride.name} built for ${money(plan.cost)}.`,
         );
         this.callbacks.changed();
+        if (spec.coaster) {
+          this.setTool({ kind: 'inspect' });
+          this.callbacks.done();
+        }
         this.callbacks.select({ kind: 'ride', id: ride.id });
       }
     } else if (tool.kind === 'land' && end) {

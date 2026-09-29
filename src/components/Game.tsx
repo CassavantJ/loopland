@@ -1,6 +1,7 @@
 import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from 'react';
 
 import { savePark } from '../game/save';
+import { buildDesign, placeCoaster } from '../sim/coasters';
 import { Interaction, type Selection, type Tool } from '../game/tools';
 import type { Park } from '../sim/park';
 import { TICK, World } from '../sim/world';
@@ -86,11 +87,19 @@ export function Game({ park, onNewPark }: { park: Park; onNewPark: () => void })
       faced: (next) => {
         setFacing(next);
       },
+      done: () => {
+        setToolState({ kind: 'inspect' });
+      },
     });
     interaction.current = input;
     // Development only: lets automated checks build parks and move the camera.
     if (import.meta.env.DEV) {
-      (window as Window & { loopland?: unknown }).loopland = { world, view: created, input };
+      (window as Window & { loopland?: unknown }).loopland = {
+        world,
+        view: created,
+        input,
+        coasters: { placeCoaster, buildDesign },
+      };
     }
 
     const resize = () => {
@@ -319,6 +328,10 @@ export function Game({ park, onNewPark }: { park: Park; onNewPark: () => void })
         onSelect={setSelection}
         onNewPark={onNewPark}
         onSave={() => savePark(world.park)}
+        onGhost={(ghost) => {
+          const ride = selection?.kind === 'ride' ? world.park.ride(selection.id) : undefined;
+          view.current?.setTrackGhost(ghost && ride ? { ...ghost, type: ride.type } : null);
+        }}
       />
       <Toolbar
         tool={tool}

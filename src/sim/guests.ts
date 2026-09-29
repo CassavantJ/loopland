@@ -201,10 +201,15 @@ export function driftNeeds(guest: Guest, dt: number): void {
   guest.happiness = clamp(guest.happiness + mood * dt);
 }
 
+/** A ride's ratings: measured on a test run for coasters, fixed for everything else. */
+export function ratingsOf(ride: Ride): { excitement: number; intensity: number; nausea: number } {
+  return ride.coaster?.stats ?? RIDE_TYPES[ride.type];
+}
+
 /** What a guest thinks a ride or item is worth, in cents. */
 export function fairPrice(ride: Ride): number {
   const spec = RIDE_TYPES[ride.type];
-  if (spec.kind === 'ride') return Math.round(spec.excitement * 55) * 1;
+  if (spec.kind === 'ride') return Math.round(ratingsOf(ride).excitement * 55);
   switch (spec.sells) {
     case 'burger':
       return 350;
@@ -230,7 +235,7 @@ export function intensityFit(guest: Guest, intensity: number): number {
 
 /** A guest comes off a ride: happier (or not), a bit queasier. */
 export function afterRide(guest: Guest, ride: Ride, random: Random, day: number): void {
-  const spec = RIDE_TYPES[ride.type];
+  const spec = ratingsOf(ride);
   const fit = intensityFit(guest, spec.intensity);
   guest.happiness = clamp(
     guest.happiness + 0.03 + 0.05 * spec.excitement * Math.max(0, fit) - (fit < 0.5 ? 0.12 : 0),

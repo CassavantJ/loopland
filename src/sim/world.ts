@@ -1,5 +1,7 @@
 import { RIDE_TYPES, type Item } from './catalog';
 import { DIRECTIONS, DX, DZ, type Direction, type Tile } from './grid';
+import { circuitOf } from './coasters';
+import { stepTrain } from './coaster';
 import {
   afterRide,
   afterStall,
@@ -7,6 +9,7 @@ import {
   fairPrice,
   intensityFit,
   makeGuest,
+  ratingsOf,
   think,
   type Guest,
 } from './guests';
@@ -80,6 +83,7 @@ export class World {
   /** Whether guests can use a ride: open, with a way in and a way out. */
   usable(ride: Ride): boolean {
     if (!ride.open) return false;
+    if (ride.coaster && (!ride.coaster.complete || !ride.coaster.stats)) return false;
     const target = this.target(ride);
     if (!target || !this.park.isWalkable(target.x, target.z)) return false;
     if (RIDE_TYPES[ride.type].kind === 'stall') return true;
@@ -94,6 +98,11 @@ export class World {
 
   /** What's wrong with a ride, for its info panel. */
   problem(ride: Ride): string | null {
+    const coaster = ride.coaster;
+    if (coaster && !coaster.complete)
+      return 'The track isn’t finished: bring it back round into the station.';
+    if (coaster?.problem) return coaster.problem;
+    if (coaster && !coaster.stats) return 'It needs a test run before it can open.';
     if (!ride.open) return 'Closed.';
     const spec = RIDE_TYPES[ride.type];
     if (spec.kind === 'stall') return this.target(ride) ? null : 'The counter doesn’t face a path.';
@@ -485,8 +494,9 @@ export class World {
     let best: Ride | null = null;
     let bestScore = -Infinity;
     for (const ride of park.rides) {
-      const spec = RIDE_TYPES[ride.type];
-      if (spec.kind !== 'ride' || !this.usable(ride) || ride.price > guest.money) continue;
+      const spec = ratingsOf(ride);
+      if (RIDE_TYPES[ride.type].kind !== 'ride' || !this.usable(ride) || ride.price > guest.money)
+        continue;
       const fit = intensityFit(guest, spec.intensity);
       if (fit < 0.3) continue;
       const target = this.target(ride);
@@ -556,6 +566,12 @@ export class World {
         break;
       }
       case 'running':
+        if (ride.coaster) {
+          const type = RIDE_TYPES[ride.type].coaster;
+          if (type && stepTrain(circuitOf(ride.coaster), type, ride.coaster.train, dt))
+            this.finish(ride);
+          break;
+        }
         ride.timer -= dt;
         if (ride.timer <= 0) this.finish(ride);
         break;
@@ -585,6 +601,21 @@ export class World {
     }
     ride.phase = ride.riders.length > 0 ? 'running' : 'idle';
     ride.timer = RIDE_TYPES[ride.type].duration;
+    this.dispatch(ride);
+  }
+
+  /** Coasters: send the train off from the station. */
+  private dispatch(ride: Ride) {
+    const coaster = ride.coaster;
+    if (!coaster || ride.phase !== 'running') return;
+    coaster.train = { s: circuitOf(coaster).stop, v: 0, travelled: 0 };
+  }
+
+  /** Sends an empty train round a finished coaster, to watch it run. */
+  testDrive(ride: Ride): void {
+    if (!ride.coaster?.complete || ride.phase === 'running') return;
+    ride.phase = 'running';
+    this.dispatch(ride);
   }
 
   private finish(ride: Ride) {

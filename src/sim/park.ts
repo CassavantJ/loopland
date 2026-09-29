@@ -9,6 +9,7 @@ import {
   type RideTypeId,
   type SceneryId,
 } from './catalog';
+import type { CoasterState } from './coasters';
 import { DIRECTIONS, DX, DZ, Terrain, turn, type Direction, type Tile } from './grid';
 import { Random } from './random';
 
@@ -56,6 +57,8 @@ export interface Ride {
   monthIncome: number;
   monthCustomers: number;
   built: number;
+  /** Roller coasters: their track, test results and train. */
+  coaster?: CoasterState;
 }
 
 export interface Placement {
@@ -215,6 +218,11 @@ export class Park {
   earn(amount: number, category: keyof Ledger): void {
     this.money += amount;
     this.ledger[category] += amount;
+  }
+
+  /** Tells views something changed (for builders outside this class). */
+  touch(): void {
+    this.version++;
   }
 
   private changed(land = false) {
@@ -431,7 +439,7 @@ export class Park {
       return id ? SCENERY[id].cost / 2 : 0;
     }
     const ride = this.rideAt(x, z);
-    return ride ? RIDE_TYPES[ride.type].cost / 2 : 0;
+    return ride ? (RIDE_TYPES[ride.type].cost + (ride.coaster?.spent ?? 0)) / 2 : 0;
   }
 
   /** Bulldozes whatever is on a tile. Returns a description of what went, or null. */

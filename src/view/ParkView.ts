@@ -3,10 +3,12 @@ import * as THREE from 'three';
 import { RIDE_TYPES, type PathItemId, type RideTypeId, type SceneryId } from '../sim/catalog';
 import { HEIGHT_STEP, type Direction, type Tile } from '../sim/grid';
 import { PATH_ITEM_IDS, SCENERY_IDS, USE, type Ride } from '../sim/park';
+import type { Placed } from '../sim/track';
 import type { World } from '../sim/world';
 import { Crowd, FACING_ANGLE } from './crowd';
 import { cornerGeometry, pathGeometry, terrainGeometry, tilesGeometry } from './land';
 import { mat } from './materials';
+import { coasterModel, pieceGhost } from './coasterModel';
 import {
   entranceModel,
   gateModel,
@@ -59,7 +61,11 @@ export class ParkView {
   private paths: THREE.Mesh;
   private scenery = new THREE.Group();
   private rides = new THREE.Group();
-  private readonly models = new Map<number, { ride: Ride; holder: THREE.Group; model: Model }>();
+  private readonly models = new Map<
+    number,
+    { ride: Ride; holder: THREE.Group; model: Model; version: number }
+  >();
+  private trackGhost: THREE.Mesh | null = null;
   private readonly crowd = new Crowd();
   private cursor: THREE.Mesh;
   private ghost: THREE.Group | null = null;
@@ -267,7 +273,8 @@ export class ParkView {
     const park = this.world.park;
     const current = new Set(park.rides.map((ride) => ride.id));
     for (const [id, entry] of this.models) {
-      if (!current.has(id)) {
+      const stale = entry.ride.coaster && entry.version !== entry.ride.coaster.version;
+      if (!current.has(id) || stale) {
         this.rides.remove(entry.holder);
         this.models.delete(id);
       }
@@ -275,10 +282,15 @@ export class ParkView {
     for (const ride of park.rides) {
       if (this.models.has(ride.id)) continue;
       const holder = new THREE.Group();
-      const model = rideModel(ride);
       const y = ride.height * HEIGHT_STEP;
-      model.group.position.set(ride.x + ride.width / 2, y, ride.z + ride.depth / 2);
-      model.group.rotation.y = FACING_ANGLE[ride.facing];
+      let model: Model;
+      if (ride.coaster) {
+        model = coasterModel(ride, park.terrain);
+      } else {
+        model = rideModel(ride);
+        model.group.position.set(ride.x + ride.width / 2, y, ride.z + ride.depth / 2);
+        model.group.rotation.y = FACING_ANGLE[ride.facing];
+      }
       holder.add(model.group);
       const color = RIDE_TYPES[ride.type].colours[0] ?? '#ff6b6b';
       for (const [tile, exit] of [
@@ -293,8 +305,20 @@ export class ParkView {
       }
       holder.userData.rideId = ride.id;
       this.rides.add(holder);
-      this.models.set(ride.id, { ride, holder, model });
+      this.models.set(ride.id, { ride, holder, model, version: ride.coaster?.version ?? 0 });
     }
+  }
+
+  /** Shows (or hides) the next track piece the builder would add. */
+  setTrackGhost(ghost: { placed: Placed; type: RideTypeId; ok: boolean } | null): void {
+    if (this.trackGhost) {
+      this.scene.remove(this.trackGhost);
+      this.trackGhost.geometry.dispose();
+      this.trackGhost = null;
+    }
+    if (!ghost) return;
+    this.trackGhost = pieceGhost(ghost.placed, ghost.type, ghost.ok);
+    this.scene.add(this.trackGhost);
   }
 
   setPreview(preview: Preview): void {
