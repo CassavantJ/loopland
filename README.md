@@ -2,6 +2,23 @@
 
 Build a theme park: rides, coasters, scenery and happy (or queasy) guests.
 
+An original theme-park builder in the spirit of the classic park sims, drawn as an isometric
+diorama with three.js. Lay paths from the gate, add flat rides and stalls, design roller
+coasters piece by piece, and keep guests fed, watered and entertained. Everything, from the
+ride models to the guests, is made in code for this game.
+
+- **Simulation** (`src/sim/`): the land, building rules, guests (needs, tastes, thoughts,
+  queues), rides and money, all plain TypeScript with tests. A fixed-step clock runs it.
+- **Coasters** (`src/sim/track.ts`, `coaster.ts`, `coasters.ts`): track pieces, a dense
+  sample of the finished circuit, train physics, and a test run that measures speed, drops,
+  G-forces, airtime and inversions to rate each coaster. Tests check that every ready-made
+  layout closes, runs and rates sensibly.
+- **View** (`src/view/`): the terrain, paths and every model, built from primitives and kept
+  in sync with the simulation.
+
+It's being built in stages: the park and coasters are in; staff, breakdowns and research,
+landscaping and water, and scenarios come next.
+
 Part of [Jake's hub](https://raylmao.com). Scaffolded from the hub's app template, so it shares
 the hub's theme, font and "back to the hub" bar (see `src/hub/`).
 
