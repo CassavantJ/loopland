@@ -1,30 +1,23 @@
 import { useState } from 'react';
 
-import styles from './App.module.css';
-import { app } from './app.config';
+import { Game } from './components/Game';
+import { clearSave, loadPark, newPark, savePark } from './game/save';
 
-/** Your app starts here. The hub bar, theme and fonts come from src/hub/. */
+/** Loads the saved park, or starts a fresh one. "New park" swaps in a new world. */
 export function App() {
-  const [count, setCount] = useState(0);
-
+  const [park, setPark] = useState(() => loadPark() ?? newPark());
+  const [generation, setGeneration] = useState(0);
   return (
-    <main className={styles.main}>
-      <section className={styles.card}>
-        <h1 className={styles.title}>{app.title}</h1>
-        <p className={styles.text}>{app.description}</p>
-        <button
-          type="button"
-          className={styles.button}
-          onClick={() => {
-            setCount((value) => value + 1);
-          }}
-        >
-          Clicked {count} {count === 1 ? 'time' : 'times'}
-        </button>
-        <p className={styles.hint}>
-          Edit <code>src/App.tsx</code> to start building.
-        </p>
-      </section>
-    </main>
+    <Game
+      key={generation}
+      park={park}
+      onNewPark={() => {
+        clearSave();
+        const fresh = newPark();
+        savePark(fresh);
+        setPark(fresh);
+        setGeneration((value) => value + 1);
+      }}
+    />
   );
 }
