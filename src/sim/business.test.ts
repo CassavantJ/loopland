@@ -215,10 +215,10 @@ describe('scenarios', () => {
     const placed = buildStreet(park, world, [
       'carousel',
       'teacups',
-      'ferris-wheel',
       'carousel',
       'teacups',
-      'ferris-wheel',
+      'carousel',
+      'teacups',
     ]);
     expect(placed.filter((name) => name.includes('failed'))).toEqual([]);
     const deadline = MONTH * MONTHS.length * def.objective.year;

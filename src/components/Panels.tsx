@@ -3,6 +3,7 @@ import { useState, type ReactNode } from 'react';
 
 import type { Brush, Selection, Tool } from '../game/tools';
 import { SURFACES } from '../sim/park';
+import { sceneryUnlocked } from '../sim/research';
 import {
   COASTERS,
   money,
@@ -339,12 +340,17 @@ export function Panels(props: Props) {
                   <button
                     type="button"
                     aria-pressed={tool.kind === 'scenery' && tool.id === item.id}
+                    disabled={!sceneryUnlocked(park.research, item.id)}
                     onClick={() => {
                       onTool({ kind: 'scenery', id: item.id });
                     }}
                   >
                     <strong>{item.name}</strong>
-                    <small>{money(item.cost)}</small>
+                    <small>
+                      {sceneryUnlocked(park.research, item.id)
+                        ? money(item.cost)
+                        : 'Not invented yet'}
+                    </small>
                   </button>
                 </li>
               ))}
@@ -370,12 +376,18 @@ export function Panels(props: Props) {
       );
     case 'land': {
       const size: Brush = 'size' in tool && tool.kind !== 'water' ? tool.size : 3;
+      const landscaping = park.research.invented.includes('tool:landscaping');
       return (
         <Panel title="Land" onClose={onClose}>
           <p className={styles.small}>
             Shape the land a corner or a patch at a time; the land around follows. Earth costs{' '}
             {money(250)} a step.
           </p>
+          {!landscaping && (
+            <p className={styles.warning}>
+              Research Landscaping to reshape the land and paint the ground.
+            </p>
+          )}
           <div className={styles.row}>
             {(
               [
@@ -388,6 +400,7 @@ export function Panels(props: Props) {
                 key={mode}
                 type="button"
                 className={styles.toggle}
+                disabled={!landscaping}
                 onClick={() => {
                   onTool({ kind: 'land', mode, size: mode === 'level' && size === 0 ? 3 : size });
                 }}
@@ -419,6 +432,7 @@ export function Panels(props: Props) {
               <li key={surface.name}>
                 <button
                   type="button"
+                  disabled={!landscaping}
                   onClick={() => {
                     onTool({ kind: 'paint', surface: index, size: size === 0 ? 3 : size });
                   }}
@@ -440,10 +454,14 @@ export function Panels(props: Props) {
             the land first for a deeper lake. Paddle boats need water they can float on. Costs{' '}
             {money(500)} a tile.
           </p>
+          {!park.research.invented.includes('tool:water') && (
+            <p className={styles.warning}>Research Water to make lakes and ponds.</p>
+          )}
           <div className={styles.row}>
             <button
               type="button"
               className={styles.toggle}
+              disabled={!park.research.invented.includes('tool:water')}
               onClick={() => {
                 onTool({ kind: 'water', raise: true, size: 3 });
               }}
@@ -453,6 +471,7 @@ export function Panels(props: Props) {
             <button
               type="button"
               className={styles.toggle}
+              disabled={!park.research.invented.includes('tool:water')}
               onClick={() => {
                 onTool({ kind: 'water', raise: false, size: 3 });
               }}
@@ -634,6 +653,7 @@ export function Panels(props: Props) {
             <li>Queue lines leading to a ride’s entrance let more guests wait.</li>
             <li>Hungry, thirsty guests need food, drinks and toilets nearby.</li>
             <li>Click a ride or a guest to see how they’re doing.</li>
+            <li>New rides, shops, scenery, landscaping and water come from Research.</li>
           </ul>
           <h3 className={styles.subhead}>Controls</h3>
           <ul className={styles.help}>

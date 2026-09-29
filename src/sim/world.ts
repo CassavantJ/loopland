@@ -26,7 +26,7 @@ import {
 } from './crew';
 import { Navigator } from './navigation';
 import { BIN_CAPACITY, emptyLedger, MONTHS, USE, type Park, type Ride } from './park';
-import { currentProject, FUNDING, researchDay } from './research';
+import { currentProject, FUNDING, projectKind, projectName, researchDay } from './research';
 import { checkObjective } from './scenarios';
 import { makeStaff, STAFF, type Staff, type StaffRole } from './staff';
 
@@ -929,8 +929,14 @@ export class World {
     }
     const invented = researchDay(park.research);
     if (invented) {
-      const spec = RIDE_TYPES[invented];
-      park.post(`New ${spec.kind === 'stall' ? 'stall' : 'ride'} invented: ${spec.name}!`);
+      const kind = projectKind(invented);
+      park.post(
+        kind === 'tool'
+          ? `Research done: you can now use ${projectName(invented)}!`
+          : kind === 'scenery'
+            ? `New scenery: ${projectName(invented)}!`
+            : `New ${kind} invented: ${projectName(invented)}!`,
+      );
       park.touch();
     }
     this.updateCleanliness();

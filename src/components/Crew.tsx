@@ -1,7 +1,21 @@
 import { useState } from 'react';
 
-import { money, RIDE_TYPES } from '../sim/catalog';
-import { currentProject, daysLeft, FUNDING, RESEARCH_ORDER } from '../sim/research';
+import { money } from '../sim/catalog';
+import {
+  currentProject,
+  daysLeft,
+  FUNDING,
+  projectKind,
+  projectName,
+  RESEARCH_ORDER,
+} from '../sim/research';
+
+const KIND_NAMES: Record<string, string> = {
+  ride: 'ride',
+  stall: 'shop',
+  scenery: 'scenery',
+  tool: 'tool',
+};
 import { costumeName, describeJob, STAFF, STAFF_ROLES, type Staff } from '../sim/staff';
 import type { World } from '../sim/world';
 import styles from './Game.module.css';
@@ -186,7 +200,7 @@ export function ResearchPanel({ world }: { world: World }) {
       </div>
       {project ? (
         <div className={styles.project}>
-          <p className={styles.status}>Working on: {RIDE_TYPES[project].name}</p>
+          <p className={styles.status}>Working on: {projectName(project)}</p>
           <meter min={0} max={1} value={research.progress} aria-label="Research progress" />
           <p className={styles.small}>
             {left === null
@@ -199,8 +213,10 @@ export function ResearchPanel({ world }: { world: World }) {
       )}
       <h3 className={styles.subhead}>Still to come</h3>
       <ul className={styles.thoughts}>
-        {RESEARCH_ORDER.filter((type) => !research.invented.includes(type)).map((type) => (
-          <li key={type}>{RIDE_TYPES[type].name}</li>
+        {RESEARCH_ORDER.filter((id) => !research.invented.includes(id)).map((id) => (
+          <li key={id}>
+            {projectName(id)} <small>{KIND_NAMES[projectKind(id)] ?? ''}</small>
+          </li>
         ))}
       </ul>
     </>

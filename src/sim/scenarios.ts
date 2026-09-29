@@ -2,7 +2,7 @@ import { money, RIDE_TYPES, type RideTypeId } from './catalog';
 import { parkValue } from './business';
 import { ratingsOf } from './guests';
 import { createPark, MONTHS, type Park } from './park';
-import { RESEARCH_ORDER, STARTING } from './research';
+import { newResearch, RESEARCH_ORDER, STARTING, type ProjectId } from './research';
 import type { World } from './world';
 
 /**
@@ -33,7 +33,7 @@ export interface ScenarioDef {
   /** Land the park owns to start with; the rest of the map is for sale at `landPrice`. */
   owned?: { x0: number; z0: number; x1: number; z1: number };
   landPrice: number;
-  invented: 'start' | 'all' | readonly RideTypeId[];
+  invented: 'start' | 'all' | readonly ProjectId[];
   objective: Objective;
 }
 
@@ -45,9 +45,9 @@ export const SCENARIOS: readonly ScenarioDef[] = [
     blurb: 'Flat green fields and a little money. The perfect place to start your first park.',
     seed: 11,
     terrain: 'gentle',
-    money: 2_500_000,
+    money: 1_000_000,
     loan: 0,
-    maxLoan: 2_000_000,
+    maxLoan: 1_000_000,
     landPrice: 20_000,
     invented: 'start',
     objective: { kind: 'guests', guests: 200, rating: 600, year: 2 },
@@ -60,11 +60,11 @@ export const SCENARIOS: readonly ScenarioDef[] = [
     seed: 23,
     terrain: 'gentle',
     lake: { x0: 14, z0: 18, x1: 21, z1: 25 },
-    money: 3_000_000,
+    money: 1_200_000,
     loan: 0,
-    maxLoan: 2_000_000,
+    maxLoan: 1_000_000,
     landPrice: 20_000,
-    invented: [...STARTING, 'paddle-boats'],
+    invented: [...STARTING, 'paddle-boats', 'tool:water'],
     objective: { kind: 'guests', guests: 300, rating: 620, year: 2 },
   },
   {
@@ -74,11 +74,11 @@ export const SCENARIOS: readonly ScenarioDef[] = [
     blurb: 'Steep hills made for roller coasters, and a bank loan to build them with.',
     seed: 37,
     terrain: 'hilly',
-    money: 3_000_000,
-    loan: 1_000_000,
-    maxLoan: 3_000_000,
+    money: 1_200_000,
+    loan: 600_000,
+    maxLoan: 1_500_000,
     landPrice: 20_000,
-    invented: [...STARTING, 'wooden-coaster'],
+    invented: [...STARTING, 'junior-coaster', 'wooden-coaster', 'tool:landscaping'],
     objective: { kind: 'coasters', count: 3, excitement: 5, year: 3 },
   },
   {
@@ -88,9 +88,9 @@ export const SCENARIOS: readonly ScenarioDef[] = [
     blurb: 'Investors want a park worth something. Build big, and fill it with guests.',
     seed: 41,
     terrain: 'hilly',
-    money: 2_000_000,
-    loan: 500_000,
-    maxLoan: 3_000_000,
+    money: 800_000,
+    loan: 300_000,
+    maxLoan: 1_500_000,
     landPrice: 20_000,
     invented: 'start',
     objective: { kind: 'value', value: 3_500_000, year: 3 },
@@ -102,9 +102,9 @@ export const SCENARIOS: readonly ScenarioDef[] = [
     blurb: 'A tiny plot by the road. Buy more land as you grow, and pack in the crowds.',
     seed: 53,
     terrain: 'gentle',
-    money: 1_500_000,
+    money: 800_000,
     loan: 0,
-    maxLoan: 2_500_000,
+    maxLoan: 1_200_000,
     owned: { x0: 18, z0: 30, x1: 30, z1: 46 },
     landPrice: 30_000,
     invented: 'start',
@@ -117,9 +117,9 @@ export const SCENARIOS: readonly ScenarioDef[] = [
     blurb: 'Deep in debt. Turn it round: make the rides and shops earn big in a single month.',
     seed: 67,
     terrain: 'flat',
-    money: 2_000_000,
-    loan: 1_500_000,
-    maxLoan: 2_500_000,
+    money: 1_000_000,
+    loan: 800_000,
+    maxLoan: 1_200_000,
     landPrice: 20_000,
     invented: 'start',
     objective: { kind: 'income', perMonth: 250_000, year: 3 },
@@ -151,11 +151,11 @@ export function createScenario(def: ScenarioDef): Park {
     hilly: { hills: 16, peak: [5, 12] as const, flat: 0.24 },
     flat: { hills: 0 },
   } as const;
-  const park = createPark(def.seed, 48, def.invented === 'all', shapes[def.terrain]);
+  // Built with everything unlocked (to dig any lake); the scenario's research comes after.
+  const park = createPark(def.seed, 48, true, shapes[def.terrain]);
   park.name = def.name === 'Sandbox' ? 'Loopland' : def.name;
   park.scenario = def.id;
   park.objective = def.objective;
-  if (typeof def.invented !== 'string') park.research.invented = [...def.invented];
   if (def.lake) {
     // Dig two steps down and fill it back up level with the land around.
     const { x0, z0, x1, z1 } = def.lake;
@@ -174,6 +174,8 @@ export function createScenario(def: ScenarioDef): Park {
       }
     }
   }
+  park.research = newResearch(def.invented === 'all');
+  if (typeof def.invented !== 'string') park.research.invented = [...def.invented];
   park.landPrice = def.landPrice;
   park.maxLoan = def.maxLoan;
   park.loan = def.loan;
@@ -282,5 +284,9 @@ export function startingRides(def: ScenarioDef): string[] {
       : def.invented === 'start'
         ? STARTING
         : def.invented;
-  return ids.filter((id) => RIDE_TYPES[id].kind === 'ride').map((id) => RIDE_TYPES[id].name);
+  return ids
+    .filter(
+      (id): id is RideTypeId => id in RIDE_TYPES && RIDE_TYPES[id as RideTypeId].kind === 'ride',
+    )
+    .map((id) => RIDE_TYPES[id].name);
 }

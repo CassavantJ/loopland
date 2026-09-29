@@ -72,10 +72,13 @@ describe('water', () => {
     expect(p.underwater(21, 21)).toBe(false);
   });
 
-  it('won’t flood paths, and drowns scenery', () => {
+  it('flows round paths, and drowns scenery', () => {
     const p = park();
     p.buildPath(21, 21);
-    expect(p.editWater(20, 20, 22, 22, true).reason).toMatch(/in the way/);
+    expect(p.editWater(21, 21, 21, 21, true).reason).toMatch(/in the way/);
+    expect(p.editWater(20, 20, 22, 22, true).ok).toBe(true);
+    expect(p.underwater(20, 20)).toBe(true);
+    expect(p.underwater(21, 21)).toBe(false);
     const q = park();
     q.placeScenery('oak', 21, 21);
     q.editWater(20, 20, 22, 22, true);
@@ -114,12 +117,51 @@ describe('water', () => {
     expect(plan.entrance).toEqual({ x: 25, z: 20 });
   });
 
+  it('stacks water above the ground around it', () => {
+    const p = park();
+    const ground = p.terrain.base(21, 21);
+    for (let step = 0; step < 4; step++) {
+      expect(p.editWater(20, 20, 22, 22, true).ok).toBe(true);
+    }
+    expect(p.water[p.index(21, 21)]).toBe(ground + 4);
+    expect(p.water[p.index(21, 21)]).toBeGreaterThan(p.terrain.base(24, 21));
+    // Lowering takes it back down a step at a time.
+    expect(p.editWater(20, 20, 22, 22, false).ok).toBe(true);
+    expect(p.water[p.index(21, 21)]).toBe(ground + 3);
+  });
+
   it('keeps coaster track out of the water', () => {
     const p = park();
     const ride = placeCoaster(p, 'junior-coaster', 22, 26, 3);
     if (!ride) throw new Error('no coaster');
     p.editWater(21, 24, 23, 25, true);
     expect(appendCheck(p, ride, 'straight', false).reason).toMatch(/water/);
+  });
+});
+
+describe('research locks', () => {
+  it('keeps landscaping, water and fancy scenery locked until invented', () => {
+    const p = createPark(6, 48, false);
+    p.money = 10_000_000;
+    expect(p.landCheck(20, 20, 22, 22, 'raise').reason).toMatch(/Research Landscaping/);
+    expect(p.paint(20, 20, 22, 22, 4).reason).toMatch(/Research Landscaping/);
+    expect(p.waterCheck(20, 20, 22, 22, true).reason).toMatch(/Research Water/);
+    expect(p.sceneryCheck('fountain', 20, 20).reason).toMatch(/Not invented/);
+    expect(p.sceneryCheck('oak', 20, 20).ok).toBe(true);
+    p.research.invented.push('tool:landscaping', 'tool:water', 'scenery:garden');
+    expect(p.landCheck(20, 20, 22, 22, 'raise').ok).toBe(true);
+    expect(p.waterCheck(20, 20, 22, 22, true).ok).toBe(true);
+    expect(p.sceneryCheck('fountain', 20, 20).ok).toBe(true);
+  });
+
+  it('keeps everything unlocked in parks saved before the locks', () => {
+    const p = createPark(6, 48, false);
+    const saved = JSON.parse(JSON.stringify(p.toJSON())) as SavedPark;
+    delete saved.research?.version;
+    const loaded = Park.fromJSON(saved);
+    expect(loaded.research.invented).toContain('tool:water');
+    expect(loaded.research.invented).toContain('scenery:space');
+    expect(loaded.research.invented).not.toContain('steel-coaster');
   });
 });
 

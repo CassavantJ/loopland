@@ -117,7 +117,7 @@ export const STEPS: readonly Step[] = [
   {
     id: 'goal',
     title: 'Your goal',
-    text: 'Every park has a goal, shown in the top bar. Open Park any time to see how you’re doing, set the entrance fee, and read the news. Have fun!',
+    text: 'Every park has a goal, shown in the top bar. Open Park to see how you’re doing and set the entrance fee. Everything else (bigger rides, more shops, fancy scenery, even reshaping the land) gets invented by Research, so keep an eye on it. Have fun!',
     highlight: 'Park',
   },
 ];

@@ -1023,3 +1023,9 @@
     animation: none;
   }
 }
+
+.grid button:disabled,
+.surfaces button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

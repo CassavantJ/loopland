@@ -11,7 +11,7 @@ import {
 } from './catalog';
 import type { CoasterState } from './coasters';
 import type { Award, Campaign } from './business';
-import { newResearch, type Research } from './research';
+import { newResearch, sceneryUnlocked, upgradeResearch, type Research } from './research';
 import type { Objective } from './scenarios';
 import { cellTile, pieceCells, pieceEnd } from './track';
 import type { Staff } from './staff';
@@ -361,6 +361,8 @@ export class Park {
     if (this.useAt(x, z) !== USE.empty)
       return { ok: false, reason: 'Something’s in the way.', cost: 0 };
     if (this.underwater(x, z)) return { ok: false, reason: 'That would be under water.', cost: 0 };
+    if (!sceneryUnlocked(this.research, id))
+      return { ok: false, reason: 'Not invented yet.', cost: 0 };
     const cost = SCENERY[id].cost;
     if (cost > this.money) return { ok: false, reason: 'Not enough money.', cost };
     return { ok: true, reason: '', cost };
@@ -624,6 +626,9 @@ export class Park {
     target = 0,
   ): { ok: boolean; reason: string; cost: number; trial: Terrain | null } {
     const fail = (reason: string) => ({ ok: false, reason, cost: 0, trial: null });
+    if (!this.research.invented.includes('tool:landscaping')) {
+      return fail('Research Landscaping to reshape the land.');
+    }
     const trial = new Terrain(this.width, this.depth, this.terrain.corners.slice());
     let moved = 0;
     for (let cz = Math.max(0, cz0); cz <= Math.min(this.depth, cz1); cz++) {
@@ -757,6 +762,8 @@ export class Park {
   ): { ok: boolean; reason: string; cost: number; levels: Map<number, number> } {
     const levels = new Map<number, number>();
     const fail = (reason: string) => ({ ok: false, reason, cost: 0, levels });
+    if (!this.research.invented.includes('tool:water'))
+      return fail('Research Water to make lakes.');
     // Water finds its own level: the whole patch moves to one surface height, a step above
     // (or below) the highest water or lake bed in it.
     let surface = 0;
@@ -768,6 +775,7 @@ export class Park {
       }
     }
     const goal = raise ? Math.min(MAX_WATER, surface + 1) : surface - 1;
+    let blocked = 0;
     for (let z = z0; z <= z1; z++) {
       for (let x = x0; x <= x1; x++) {
         if (!this.inside(x, z)) continue;
@@ -779,13 +787,23 @@ export class Park {
         const next = goal <= Math.min(...corners) ? 0 : goal;
         if (next === level) continue;
         const use = this.useAt(x, z);
+        // Water flows round paths and buildings rather than drowning them.
         if (next > Math.min(...corners) && use !== USE.empty && use !== USE.scenery) {
-          return fail('Something’s in the way of the water.');
+          blocked++;
+          continue;
         }
         levels.set(index, next);
       }
     }
-    if (levels.size === 0) return fail(raise ? 'Can’t go any higher.' : 'No water to lower here.');
+    if (levels.size === 0) {
+      return fail(
+        blocked > 0
+          ? 'Something’s in the way of the water.'
+          : raise
+            ? 'Can’t go any higher.'
+            : 'No water to lower here.',
+      );
+    }
     const cost = levels.size * WATER_COST;
     if (cost > this.money) return fail('Not enough money.');
     return { ok: true, reason: '', cost, levels };
@@ -823,6 +841,9 @@ export class Park {
     z1: number,
     surface: number,
   ): { ok: boolean; reason: string } {
+    if (!this.research.invented.includes('tool:landscaping')) {
+      return { ok: false, reason: 'Research Landscaping to paint the ground.' };
+    }
     let painted = 0;
     for (let z = z0; z <= z1; z++) {
       for (let x = x0; x <= x1; x++) {
@@ -971,7 +992,7 @@ export class Park {
     park.staff = saved.staff ?? [];
     park.nextStaffId = saved.nextStaffId ?? 1;
     // Parks saved before research existed keep everything they had.
-    park.research = saved.research ?? newResearch(true);
+    park.research = saved.research ? upgradeResearch(saved.research) : newResearch(true);
     park.loan = saved.loan ?? 0;
     park.maxLoan = saved.maxLoan ?? 2_000_000;
     park.landPrice = saved.landPrice ?? 20_000;
