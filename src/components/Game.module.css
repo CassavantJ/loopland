@@ -830,3 +830,85 @@
   font-weight: 800;
   color: #862e9c !important;
 }
+
+/* Landscaping and scenery ---------------------------------------------------------------------- */
+
+.brushes {
+  display: inline-flex;
+  overflow: hidden;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+}
+
+.placing .brushes button {
+  min-height: 1.9rem;
+  padding: 0 0.6rem;
+  border: 0;
+  border-radius: 0;
+  background: #fff;
+  font-size: 0.8rem;
+}
+
+.placing .brushes button + button {
+  border-left: 1.5px solid rgb(29 26 42 / 0.2);
+}
+
+.placing .brushes button[aria-pressed='true'] {
+  background: #ffe066;
+}
+
+.surfaces {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.surfaces button {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  min-height: 2.4rem;
+  padding: 0.3rem 0.55rem;
+  border: 2px solid rgb(29 26 42 / 0.15);
+  border-radius: 0.6rem;
+  background: #fff;
+  font-weight: 700;
+}
+
+.surfaces button span {
+  width: 1.1rem;
+  height: 1.1rem;
+  border: 1.5px solid var(--ink);
+  border-radius: 0.3rem;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.tabs button {
+  min-height: 2.1rem;
+  padding: 0 0.75rem;
+  border: 2px solid rgb(29 26 42 / 0.2);
+  border-radius: 999px;
+  background: #fff;
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.tabs button[aria-pressed='true'] {
+  border-color: var(--ink);
+  background: #ffe066;
+}
+
+.bonus {
+  display: block;
+  text-align: right;
+  color: #2b8a3e !important;
+}

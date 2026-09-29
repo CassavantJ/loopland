@@ -6,7 +6,13 @@ import { PATH_ITEM_IDS, SCENERY_IDS, USE, type Ride } from '../sim/park';
 import type { Placed } from '../sim/track';
 import type { World } from '../sim/world';
 import { Crowd, FACING_ANGLE } from './crowd';
-import { cornerGeometry, pathGeometry, terrainGeometry, tilesGeometry } from './land';
+import {
+  cornerGeometry,
+  pathGeometry,
+  terrainGeometry,
+  tilesGeometry,
+  waterGeometry,
+} from './land';
 import { itemSide } from '../sim/crew';
 import { cone, mat, sphere } from './materials';
 import { coasterModel, pieceGhost } from './coasterModel';
@@ -60,6 +66,7 @@ export class ParkView {
   private readonly sun: THREE.DirectionalLight;
   private terrain: THREE.Mesh;
   private paths: THREE.Mesh;
+  private water: THREE.Mesh;
   private scenery = new THREE.Group();
   /** Path furniture, litter and sick: rebuilt whenever the mess changes. */
   private details = new THREE.Group();
@@ -111,10 +118,24 @@ export class ParkView {
     this.terrain.receiveShadow = true;
     this.paths = new THREE.Mesh(new THREE.BufferGeometry(), vertexColors);
     this.paths.receiveShadow = true;
+    this.water = new THREE.Mesh(
+      new THREE.BufferGeometry(),
+      new THREE.MeshLambertMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.72,
+        emissive: new THREE.Color('#0b3d66'),
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    );
+    this.water.renderOrder = 1;
+    this.water.receiveShadow = true;
     this.cursor = new THREE.Mesh(new THREE.BufferGeometry(), mat('#ffffff', { transparent: 0.45 }));
     this.cursor.renderOrder = 2;
     this.scene.add(
       this.terrain,
+      this.water,
       this.paths,
       this.scenery,
       this.details,
@@ -203,6 +224,8 @@ export class ParkView {
       this.landVersion = park.landVersion;
       this.terrain.geometry.dispose();
       this.terrain.geometry = terrainGeometry(park);
+      this.water.geometry.dispose();
+      this.water.geometry = waterGeometry(park);
       this.version = -1;
     }
     if (park.version === this.version) return;
@@ -425,7 +448,12 @@ export class ParkView {
       ] as const) {
         if (!tile) continue;
         const booth = entranceModel(color, exit);
-        booth.position.set(tile.x + 0.5, y, tile.z + 0.5);
+        // Booths stand on the ground (for boat rides, that's the shore, not the water).
+        booth.position.set(
+          tile.x + 0.5,
+          park.terrain.base(tile.x, tile.z) * HEIGHT_STEP,
+          tile.z + 0.5,
+        );
         booth.rotation.y = FACING_ANGLE[ride.facing];
         holder.add(booth);
       }

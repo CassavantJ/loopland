@@ -11,6 +11,7 @@ import {
   Ticket,
   Trees,
   Wallet,
+  Waves,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 
@@ -108,9 +109,17 @@ export function Toolbar({ tool, panel, onTool, onPanel }: Props) {
       <ToolButton
         label="Land"
         icon={<Mountain aria-hidden="true" />}
-        active={panel === 'land' || building('land')}
+        active={panel === 'land' || building('land') || building('paint')}
         onClick={() => {
           onPanel('land');
+        }}
+      />
+      <ToolButton
+        label="Water"
+        icon={<Waves aria-hidden="true" />}
+        active={panel === 'water' || building('water')}
+        onClick={() => {
+          onPanel('water');
         }}
       />
       <ToolButton

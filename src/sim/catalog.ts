@@ -25,7 +25,8 @@ export type RideTypeId =
   | 'ice-cream-stall'
   | 'balloon-stall'
   | 'toilets'
-  | 'info-kiosk';
+  | 'info-kiosk'
+  | 'paddle-boats';
 
 export type Item = 'burger' | 'drink' | 'ice-cream' | 'balloon' | 'map';
 
@@ -56,6 +57,8 @@ export interface RideType {
   coaster?: CoasterType;
   /** Ready-made layout for coasters. */
   design?: 'junior' | 'wooden' | 'steel';
+  /** Built on water rather than land. */
+  water?: boolean;
 }
 
 export const RIDE_TYPES: Record<RideTypeId, RideType> = {
@@ -262,6 +265,24 @@ export const RIDE_TYPES: Record<RideTypeId, RideType> = {
     },
     design: 'steel',
   },
+  'paddle-boats': {
+    id: 'paddle-boats',
+    kind: 'ride',
+    name: 'Paddle Boats',
+    blurb: 'Swan-shaped pedal boats on the lake. Needs water deep enough to float on.',
+    width: 3,
+    depth: 3,
+    cost: 45_000,
+    upkeep: 2_500,
+    price: 120,
+    capacity: 8,
+    duration: 30,
+    excitement: 2.8,
+    intensity: 0.8,
+    nausea: 0.4,
+    colours: ['#f8f9fa', '#fcc419', '#e8590c'],
+    water: true,
+  },
   'burger-stall': {
     id: 'burger-stall',
     kind: 'stall',
@@ -377,8 +398,41 @@ export const RIDES = Object.values(RIDE_TYPES).filter(
 export const COASTERS = Object.values(RIDE_TYPES).filter((type) => type.coaster);
 export const STALLS = Object.values(RIDE_TYPES).filter((type) => type.kind === 'stall');
 
+// New ids go at the end: saved parks store scenery by its position in this list.
 export type SceneryId =
-  'oak' | 'pine' | 'palm' | 'bush' | 'flowers' | 'hedge' | 'fountain' | 'statue';
+  | 'oak'
+  | 'pine'
+  | 'palm'
+  | 'bush'
+  | 'flowers'
+  | 'hedge'
+  | 'fountain'
+  | 'statue'
+  | 'willow'
+  | 'boulder'
+  | 'topiary'
+  | 'tulips'
+  | 'flower-arch'
+  | 'cactus'
+  | 'barrel'
+  | 'wagon-wheel'
+  | 'rocket'
+  | 'crystal'
+  | 'dead-tree'
+  | 'gravestone'
+  | 'pumpkin'
+  | 'tiki-torch';
+
+export type Theme = 'nature' | 'garden' | 'western' | 'space' | 'spooky' | 'tropical';
+
+export const THEMES: readonly { id: Theme; name: string }[] = [
+  { id: 'nature', name: 'Nature' },
+  { id: 'garden', name: 'Garden' },
+  { id: 'western', name: 'Wild West' },
+  { id: 'space', name: 'Space' },
+  { id: 'spooky', name: 'Spooky' },
+  { id: 'tropical', name: 'Tropical' },
+];
 
 export interface SceneryType {
   id: SceneryId;
@@ -386,17 +440,40 @@ export interface SceneryType {
   cost: number;
   /** How much guests nearby enjoy it (0–3). */
   beauty: number;
+  theme: Theme;
 }
 
+const scenery = (id: SceneryId, name: string, cost: number, beauty: number, theme: Theme) => ({
+  id,
+  name,
+  cost,
+  beauty,
+  theme,
+});
+
 export const SCENERY: Record<SceneryId, SceneryType> = {
-  oak: { id: 'oak', name: 'Oak tree', cost: 1_500, beauty: 1 },
-  pine: { id: 'pine', name: 'Pine tree', cost: 1_200, beauty: 1 },
-  palm: { id: 'palm', name: 'Palm tree', cost: 2_000, beauty: 1.5 },
-  bush: { id: 'bush', name: 'Bush', cost: 600, beauty: 0.5 },
-  flowers: { id: 'flowers', name: 'Flower bed', cost: 800, beauty: 1.5 },
-  hedge: { id: 'hedge', name: 'Hedge', cost: 700, beauty: 0.5 },
-  fountain: { id: 'fountain', name: 'Fountain', cost: 12_000, beauty: 3 },
-  statue: { id: 'statue', name: 'Statue', cost: 8_000, beauty: 2.5 },
+  oak: scenery('oak', 'Oak tree', 1_500, 1, 'nature'),
+  pine: scenery('pine', 'Pine tree', 1_200, 1, 'nature'),
+  palm: scenery('palm', 'Palm tree', 2_000, 1.5, 'tropical'),
+  bush: scenery('bush', 'Bush', 600, 0.5, 'nature'),
+  flowers: scenery('flowers', 'Flower bed', 800, 1.5, 'garden'),
+  hedge: scenery('hedge', 'Hedge', 700, 0.5, 'garden'),
+  fountain: scenery('fountain', 'Fountain', 12_000, 3, 'garden'),
+  statue: scenery('statue', 'Statue', 8_000, 2.5, 'garden'),
+  willow: scenery('willow', 'Willow tree', 1_800, 1.5, 'nature'),
+  boulder: scenery('boulder', 'Boulder', 900, 0.5, 'nature'),
+  topiary: scenery('topiary', 'Topiary', 2_500, 2, 'garden'),
+  tulips: scenery('tulips', 'Tulips', 900, 1.5, 'garden'),
+  'flower-arch': scenery('flower-arch', 'Flower arch', 4_000, 2.5, 'garden'),
+  cactus: scenery('cactus', 'Cactus', 900, 1, 'western'),
+  barrel: scenery('barrel', 'Barrels', 700, 0.5, 'western'),
+  'wagon-wheel': scenery('wagon-wheel', 'Wagon wheel', 1_000, 1, 'western'),
+  rocket: scenery('rocket', 'Model rocket', 9_000, 2.5, 'space'),
+  crystal: scenery('crystal', 'Glowing crystal', 5_000, 2, 'space'),
+  'dead-tree': scenery('dead-tree', 'Dead tree', 800, 1, 'spooky'),
+  gravestone: scenery('gravestone', 'Gravestone', 700, 1, 'spooky'),
+  pumpkin: scenery('pumpkin', 'Pumpkins', 600, 1, 'spooky'),
+  'tiki-torch': scenery('tiki-torch', 'Tiki torch', 1_200, 1.5, 'tropical'),
 };
 
 export type PathItemId = 'bench' | 'bin' | 'lamp';

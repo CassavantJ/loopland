@@ -166,6 +166,11 @@ export function RideInfo({
             <dt>Excitement</dt>
             <dd>
               {ratings.excitement.toFixed(1)} <small>({level(ratings.excitement)})</small>
+              {(ride.sceneryBonus ?? 0) > 0 && (
+                <small className={styles.bonus}>
+                  +{(ride.sceneryBonus ?? 0).toFixed(1)} from the scenery around it
+                </small>
+              )}
             </dd>
           </div>
           <div>

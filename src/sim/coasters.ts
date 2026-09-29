@@ -182,6 +182,8 @@ export function appendCheck(park: Park, ride: Ride, id: PieceId, chain: boolean)
     if (!park.isOwned(tile.x, tile.z)) return fail('The park doesn’t own this land.');
     const ground = Math.max(...park.terrain.tileCorners(tile.x, tile.z));
     if (low < ground) return fail('The track would run into the ground.');
+    const water = park.water[park.index(tile.x, tile.z)] ?? 0;
+    if (water > 0 && low < water) return fail('The track would run into the water.');
     for (const other of cells.get(park.index(tile.x, tile.z)) ?? []) {
       if (low < other.high + HEADROOM && top + HEADROOM > other.low) {
         return fail(

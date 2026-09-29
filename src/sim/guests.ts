@@ -218,7 +218,9 @@ export function driftNeeds(guest: Guest, dt: number): void {
 
 /** A ride's ratings: measured on a test run for coasters, fixed for everything else. */
 export function ratingsOf(ride: Ride): { excitement: number; intensity: number; nausea: number } {
-  return ride.coaster?.stats ?? RIDE_TYPES[ride.type];
+  const base = ride.coaster?.stats ?? RIDE_TYPES[ride.type];
+  const bonus = ride.sceneryBonus ?? 0;
+  return bonus > 0 ? { ...base, excitement: base.excitement + bonus } : base;
 }
 
 /** What a guest thinks a ride or item is worth, in cents. */

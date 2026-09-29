@@ -1,7 +1,8 @@
-import { ArrowDown, ArrowUp, Minus, Plus, RotateCw, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Equal, Minus, Plus, RotateCw, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 
-import type { Selection, Tool } from '../game/tools';
+import type { Brush, Selection, Tool } from '../game/tools';
+import { SURFACES } from '../sim/park';
 import {
   COASTERS,
   money,
@@ -10,6 +11,8 @@ import {
   RIDES,
   SCENERY,
   STALLS,
+  THEMES,
+  type Theme,
   type RideType,
 } from '../sim/catalog';
 import { MONTHS, type Ledger } from '../sim/park';
@@ -20,9 +23,19 @@ import { ResearchPanel, StaffInfo, StaffPanel } from './Crew';
 import { GuestInfo, RideInfo } from './Info';
 
 export type PanelId =
-  'rides' | 'shops' | 'scenery' | 'land' | 'staff' | 'research' | 'park' | 'money' | 'menu';
+  | 'rides'
+  | 'shops'
+  | 'scenery'
+  | 'land'
+  | 'water'
+  | 'staff'
+  | 'research'
+  | 'park'
+  | 'money'
+  | 'menu';
 
 const FACINGS = ['north', 'east', 'south', 'west'];
+const BRUSHES: readonly Brush[] = [0, 1, 3, 5];
 
 interface Props {
   world: World;
@@ -153,6 +166,7 @@ export function Panels(props: Props) {
   const park = world.park;
   const [confirmNew, setConfirmNew] = useState(false);
   const [saved, setSaved] = useState('');
+  const [theme, setTheme] = useState<Theme>('nature');
 
   if (selection?.kind === 'ride') {
     const ride = park.ride(selection.id);
@@ -224,22 +238,42 @@ export function Panels(props: Props) {
                 ? 'Queue line'
                 : 'Footpath'
               : tool.kind === 'land'
-                ? tool.raise
-                  ? 'Raise land'
-                  : 'Lower land'
-                : 'Bulldozer';
+                ? { raise: 'Raise land', lower: 'Lower land', level: 'Level land' }[tool.mode]
+                : tool.kind === 'paint'
+                  ? `Paint ${SURFACES[tool.surface]?.name.toLowerCase() ?? 'ground'}`
+                  : tool.kind === 'water'
+                    ? tool.raise
+                      ? 'Raise water'
+                      : 'Lower water'
+                    : 'Bulldozer';
     const hint =
       tool.kind === 'path'
         ? `${props.touch ? 'Drag' : 'Click and drag'} to lay a straight line.`
         : tool.kind === 'ride'
           ? `${props.touch ? 'Tap' : 'Click'} to build. Entrance faces ${FACINGS[props.facing] ?? 'south'}.`
-          : tool.kind === 'land'
-            ? `${props.touch ? 'Tap' : 'Click'} a corner of a tile.`
+          : tool.kind === 'land' || tool.kind === 'water'
+            ? `${props.touch ? 'Tap' : 'Click'} ${tool.kind === 'land' && tool.size === 0 ? 'a corner of a tile' : 'the land'}.${tool.kind === 'land' && tool.mode === 'level' ? ' Levels to where you start.' : ''}`
             : `${props.touch ? 'Tap or drag' : 'Click or drag'} to ${tool.kind === 'bulldoze' ? 'clear tiles' : 'place'}.`;
     return (
       <div className={styles.placing} role="status">
         <strong>{name}</strong>
         <span>{hint}</span>
+        {(tool.kind === 'land' || tool.kind === 'water' || tool.kind === 'paint') && (
+          <span className={styles.brushes} role="group" aria-label="Brush size">
+            {BRUSHES.filter((size) => size > 0 || tool.kind === 'land').map((size) => (
+              <button
+                key={size}
+                type="button"
+                aria-pressed={tool.size === size}
+                onClick={() => {
+                  onTool({ ...tool, size });
+                }}
+              >
+                {size === 0 ? 'Corner' : `${size}×${size}`}
+              </button>
+            ))}
+          </span>
+        )}
         {tool.kind === 'ride' && (
           <button type="button" onClick={props.onTurn} aria-label="Turn it (R)">
             <RotateCw aria-hidden="true" /> Turn
@@ -276,21 +310,37 @@ export function Panels(props: Props) {
     case 'scenery':
       return (
         <Panel title="Scenery" onClose={onClose}>
-          <ul className={styles.grid}>
-            {Object.values(SCENERY).map((item) => (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  aria-pressed={tool.kind === 'scenery' && tool.id === item.id}
-                  onClick={() => {
-                    onTool({ kind: 'scenery', id: item.id });
-                  }}
-                >
-                  <strong>{item.name}</strong>
-                  <small>{money(item.cost)}</small>
-                </button>
-              </li>
+          <div className={styles.tabs} role="group" aria-label="Themes">
+            {THEMES.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                aria-pressed={theme === option.id}
+                onClick={() => {
+                  setTheme(option.id);
+                }}
+              >
+                {option.name}
+              </button>
             ))}
+          </div>
+          <ul className={styles.grid}>
+            {Object.values(SCENERY)
+              .filter((item) => item.theme === theme)
+              .map((item) => (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    aria-pressed={tool.kind === 'scenery' && tool.id === item.id}
+                    onClick={() => {
+                      onTool({ kind: 'scenery', id: item.id });
+                    }}
+                  >
+                    <strong>{item.name}</strong>
+                    <small>{money(item.cost)}</small>
+                  </button>
+                </li>
+              ))}
           </ul>
           <h3 className={styles.subhead}>For paths</h3>
           <ul className={styles.grid}>
@@ -311,31 +361,79 @@ export function Panels(props: Props) {
           </ul>
         </Panel>
       );
-    case 'land':
+    case 'land': {
+      const size: Brush = 'size' in tool && tool.kind !== 'water' ? tool.size : 3;
       return (
         <Panel title="Land" onClose={onClose}>
           <p className={styles.small}>
-            Raise or lower one corner of a tile at a time; the land around follows. Costs{' '}
-            {money(250)} per step of earth moved.
+            Shape the land a corner or a patch at a time; the land around follows. Earth costs{' '}
+            {money(250)} a step.
+          </p>
+          <div className={styles.row}>
+            {(
+              [
+                ['raise', 'Raise', <ArrowUp key="icon" aria-hidden="true" />],
+                ['lower', 'Lower', <ArrowDown key="icon" aria-hidden="true" />],
+                ['level', 'Level', <Equal key="icon" aria-hidden="true" />],
+              ] as const
+            ).map(([mode, label, icon]) => (
+              <button
+                key={mode}
+                type="button"
+                className={styles.toggle}
+                onClick={() => {
+                  onTool({ kind: 'land', mode, size: mode === 'level' && size === 0 ? 3 : size });
+                }}
+              >
+                {icon} {label}
+              </button>
+            ))}
+          </div>
+          <h3 className={styles.subhead}>Paint the ground</h3>
+          <ul className={styles.surfaces}>
+            {SURFACES.map((surface, index) => (
+              <li key={surface.name}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onTool({ kind: 'paint', surface: index, size: size === 0 ? 3 : size });
+                  }}
+                >
+                  <span style={{ background: surface.colour }} aria-hidden="true" />
+                  {surface.name}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      );
+    }
+    case 'water':
+      return (
+        <Panel title="Water" onClose={onClose}>
+          <p className={styles.small}>
+            Make lakes and ponds: raise the water a step at a time over a patch of land, or lower
+            the land first for a deeper lake. Paddle boats need water they can float on. Costs{' '}
+            {money(500)} a tile.
           </p>
           <div className={styles.row}>
             <button
               type="button"
               className={styles.toggle}
               onClick={() => {
-                onTool({ kind: 'land', raise: true });
+                onTool({ kind: 'water', raise: true, size: 3 });
               }}
             >
-              <ArrowUp aria-hidden="true" /> Raise
+              <ArrowUp aria-hidden="true" /> Raise water
             </button>
             <button
               type="button"
               className={styles.toggle}
               onClick={() => {
-                onTool({ kind: 'land', raise: false });
+                onTool({ kind: 'water', raise: false, size: 3 });
               }}
             >
-              <ArrowDown aria-hidden="true" /> Lower
+              <ArrowDown aria-hidden="true" /> Lower water
             </button>
           </div>
         </Panel>

@@ -9,7 +9,16 @@ import {
 } from '../sim/catalog';
 import { DX, DZ, type Direction, type Tile } from '../sim/grid';
 import { placeCoaster } from '../sim/coasters';
-import { USE } from '../sim/park';
+import { SURFACES, USE, type LandMode } from '../sim/park';
+
+/** Brush sizes for landscaping, in tiles; 0 works on a single corner. */
+export type Brush = 0 | 1 | 3 | 5;
+
+/** The tiles a brush of `size` covers around a tile. */
+export function brushRect(tile: Tile, size: Brush) {
+  const half = Math.floor(Math.max(1, size) / 2);
+  return { x0: tile.x - half, z0: tile.z - half, x1: tile.x + half, z1: tile.z + half };
+}
 import type { World } from '../sim/world';
 import type { ParkView, Pick, Preview } from '../view/ParkView';
 
@@ -19,7 +28,9 @@ export type Tool =
   | { kind: 'ride'; type: RideTypeId }
   | { kind: 'scenery'; id: SceneryId }
   | { kind: 'item'; id: PathItemId }
-  | { kind: 'land'; raise: boolean }
+  | { kind: 'land'; mode: LandMode; size: Brush }
+  | { kind: 'paint'; surface: number; size: Brush }
+  | { kind: 'water'; raise: boolean; size: Brush }
   | { kind: 'bulldoze' };
 
 export type Selection =
@@ -262,6 +273,10 @@ export class Interaction {
         this.callbacks.note(`${gone} demolished${refund ? `: ${money(refund)} back` : ''}.`);
         this.callbacks.changed();
       }
+    } else if (tool.kind === 'paint') {
+      drag.painted.add(key);
+      const { x0, z0, x1, z1 } = brushRect(pick.tile, tool.size);
+      if (park.paint(x0, z0, x1, z1, tool.surface).ok) this.callbacks.changed();
     } else if (tool.kind === 'item') {
       drag.painted.add(key);
       const result = park.placePathItem(tool.id, pick.tile.x, pick.tile.z);
@@ -327,10 +342,37 @@ export class Interaction {
         this.callbacks.select({ kind: 'ride', id: ride.id });
       }
     } else if (tool.kind === 'land' && end) {
-      const result = park.terraform(end.corner.x, end.corner.z, tool.raise ? 1 : -1);
+      const result = this.landEdit(tool, start ?? end, end, true);
+      if (!result.ok) this.callbacks.note(result.reason, true);
+      else this.callbacks.changed();
+    } else if (tool.kind === 'water' && end) {
+      const { x0, z0, x1, z1 } = brushRect(end.tile, tool.size);
+      const result = park.editWater(x0, z0, x1, z1, tool.raise);
       if (!result.ok) this.callbacks.note(result.reason, true);
       else this.callbacks.changed();
     }
+  }
+
+  /** Checks (or makes) a land edit: a corner, or a brush of tiles; levelling matches `start`. */
+  private landEdit(
+    tool: Extract<Tool, { kind: 'land' }>,
+    start: Pick,
+    end: Pick,
+    apply: boolean,
+  ): { ok: boolean; reason: string; cost: number } {
+    const park = this.world.park;
+    const target = park.terrain.base(start.tile.x, start.tile.z);
+    let rect: { cx0: number; cz0: number; cx1: number; cz1: number };
+    if (tool.size === 0 && tool.mode !== 'level') {
+      rect = { cx0: end.corner.x, cz0: end.corner.z, cx1: end.corner.x, cz1: end.corner.z };
+    } else {
+      const { x0, z0, x1, z1 } = brushRect(end.tile, tool.size);
+      rect = { cx0: x0, cz0: z0, cx1: x1 + 1, cz1: z1 + 1 };
+    }
+    const check = park.landCheck(rect.cx0, rect.cz0, rect.cx1, rect.cz1, tool.mode, target);
+    if (!apply || !check.ok) return check;
+    const done = park.editLand(rect.cx0, rect.cz0, rect.cx1, rect.cz1, tool.mode, target);
+    return { ...done, cost: check.cost };
   }
 
   private originFor(type: RideTypeId, pick: Pick, facing: Direction): Tile {
@@ -453,9 +495,31 @@ export class Interaction {
           };
           this.hint(`${PATH_ITEMS[tool.id].name}: ${money(PATH_ITEMS[tool.id].cost)}`);
           break;
-        case 'land':
-          preview = { kind: 'corner', corner: pick.corner };
+        case 'land': {
+          const start = this.drag?.start ?? pick;
+          const check = this.landEdit(tool, start, pick, false);
+          if (tool.size === 0 && tool.mode !== 'level') {
+            preview = { kind: 'corner', corner: pick.corner };
+          } else {
+            const { x0, z0, x1, z1 } = brushRect(pick.tile, tool.size);
+            preview = { kind: 'tiles', tiles: rectTiles(x0, z0, x1, z1), ok: check.ok };
+          }
+          this.hint(check.ok ? money(check.cost) : check.reason, !check.ok);
           break;
+        }
+        case 'water': {
+          const { x0, z0, x1, z1 } = brushRect(pick.tile, tool.size);
+          const check = park.waterCheck(x0, z0, x1, z1, tool.raise);
+          preview = { kind: 'tiles', tiles: rectTiles(x0, z0, x1, z1), ok: check.ok };
+          this.hint(check.ok ? money(check.cost) : check.reason, !check.ok);
+          break;
+        }
+        case 'paint': {
+          const { x0, z0, x1, z1 } = brushRect(pick.tile, tool.size);
+          preview = { kind: 'tiles', tiles: rectTiles(x0, z0, x1, z1), ok: true };
+          this.hint(`${SURFACES[tool.surface]?.name ?? 'Paint'}: ${money(100)} a tile`);
+          break;
+        }
         case 'bulldoze': {
           const ride = park.rideAt(pick.tile.x, pick.tile.z);
           const tiles = ride
@@ -475,4 +539,12 @@ export class Interaction {
     }
     this.view.setPreview(preview);
   }
+}
+
+function rectTiles(x0: number, z0: number, x1: number, z1: number): Tile[] {
+  const tiles: Tile[] = [];
+  for (let z = z0; z <= z1; z++) {
+    for (let x = x0; x <= x1; x++) tiles.push({ x, z });
+  }
+  return tiles;
 }

@@ -475,6 +475,46 @@ function stall(type: RideTypeId, colors: readonly string[]): Model {
   };
 }
 
+function paddleBoats(colors: readonly string[]): Model {
+  const group = new THREE.Group();
+  const [hull = '#f8f9fa', beak = '#fcc419', trim = '#e8590c'] = colors;
+  // A jetty along the front edge, where the entrance and exit are.
+  group.add(box(2.9, 0.06, 0.5, '#a0785a', 0, 0.02, 1.2));
+  for (const x of [-1.3, 0, 1.3]) group.add(box(0.08, 0.3, 0.08, '#6b4f3a', x, -0.25, 1.4));
+  const boats: THREE.Group[] = [];
+  for (let index = 0; index < 4; index++) {
+    const boat = new THREE.Group();
+    boat.add(box(0.3, 0.14, 0.46, hull, 0, 0, 0));
+    boat.add(box(0.2, 0.05, 0.3, trim, 0, 0.14, -0.02));
+    boat.add(box(0.07, 0.3, 0.07, hull, 0, 0.1, 0.2));
+    const head = sphere(0.07, hull, 0, 0.42, 0.23, 1);
+    boat.add(head);
+    const bill = cone(0.035, 0.1, beak, 5, 0, 0.36, 0.3);
+    bill.rotation.x = Math.PI / 2;
+    boat.add(bill);
+    group.add(boat);
+    boats.push(boat);
+  }
+  let speed = 0;
+  let angle = 0;
+  return {
+    group,
+    update(ride, time, dt) {
+      speed = spinUp(speed, ride.phase === 'running', dt, 0.4);
+      angle += dt * (0.08 + speed * 0.35);
+      boats.forEach((boat, index) => {
+        const a = angle + (index * Math.PI) / 2;
+        const moored = 1 - speed;
+        // Out on the lake while running; tied up at the jetty otherwise.
+        const x = Math.cos(a) * 0.85 * speed + (-1.05 + index * 0.7) * moored;
+        const z = Math.sin(a) * 0.7 * speed + 0.75 * moored - 0.15 * speed;
+        boat.position.set(x, 0.02 + Math.sin(time * 2 + index) * 0.02, z);
+        boat.rotation.y = speed > 0.1 ? -a : 0;
+      });
+    },
+  };
+}
+
 /** The booth at a ride's entrance, or the arch at its exit, front facing +z. */
 export function entranceModel(color: string, exit: boolean): THREE.Group {
   const group = new THREE.Group();
@@ -546,6 +586,8 @@ export function rideModel(ride: Ride): Model {
       return bumperCars(spec.colours);
     case 'haunted-house':
       return hauntedHouse(spec.colours);
+    case 'paddle-boats':
+      return paddleBoats(spec.colours);
     default:
       return stall(ride.type, spec.colours);
   }
@@ -665,6 +707,186 @@ export function sceneryGeometry(id: SceneryId): THREE.BufferGeometry {
           color: '#ced4da',
           matrix: at(0.12, 0.62, 0).multiply(new THREE.Matrix4().makeRotationZ(-0.8)),
         },
+      ]);
+    case 'willow':
+      return bake([
+        { geometry: cyl(0.06, 0.1, 0.45), color: '#7b5a3c' },
+        { geometry: ball(0.36, 1), color: '#8fbf4d', matrix: at(0, 0.62, 0, [1.1, 0.8, 1.1]) },
+        ...[0, 1, 2, 3, 4, 5].map((index) => ({
+          geometry: coneGeo(0.12, 0.45, 5).rotateX(Math.PI),
+          color: '#9dc95a',
+          matrix: at(
+            Math.cos(index) * 0.26,
+            0.62,
+            Math.sin(index) * 0.26,
+            [1, 1, 1],
+            index,
+          ).multiply(new THREE.Matrix4().makeTranslation(0, -0.45, 0)),
+        })),
+      ]);
+    case 'boulder':
+      return bake([
+        { geometry: ball(0.28), color: '#9a9aa1', matrix: at(0, 0.14, 0, [1.2, 0.75, 1]) },
+        { geometry: ball(0.15), color: '#868690', matrix: at(0.22, 0.08, 0.12) },
+      ]);
+    case 'topiary':
+      return bake([
+        { geometry: cube(0.3, 0.14, 0.3), color: '#b5651d' },
+        { geometry: cyl(0.03, 0.03, 0.2, 5), color: '#6b4226', matrix: at(0, 0.14, 0) },
+        { geometry: ball(0.2, 1), color: '#2f9e44', matrix: at(0, 0.44, 0) },
+        { geometry: ball(0.12, 1), color: '#37b24d', matrix: at(0, 0.7, 0) },
+      ]);
+    case 'tulips':
+      return bake([
+        { geometry: cube(0.8, 0.06, 0.8), color: '#6b4f3a' },
+        ...Array.from({ length: 12 }, (_, index) => ({
+          geometry: coneGeo(0.05, 0.1, 5),
+          color: ['#e03131', '#f783ac', '#fcc419', '#ffffff'][index % 4] ?? '#e03131',
+          matrix: at(-0.27 + (index % 4) * 0.18, 0.16, -0.24 + Math.floor(index / 4) * 0.24),
+        })),
+        ...Array.from({ length: 12 }, (_, index) => ({
+          geometry: cyl(0.01, 0.01, 0.12, 3),
+          color: '#2f9e44',
+          matrix: at(-0.27 + (index % 4) * 0.18, 0.05, -0.24 + Math.floor(index / 4) * 0.24),
+        })),
+      ]);
+    case 'flower-arch':
+      return bake([
+        { geometry: cube(0.06, 0.7, 0.06), color: '#f8f9fa', matrix: at(-0.34, 0, 0) },
+        { geometry: cube(0.06, 0.7, 0.06), color: '#f8f9fa', matrix: at(0.34, 0, 0) },
+        {
+          geometry: new THREE.TorusGeometry(0.34, 0.035, 5, 12, Math.PI),
+          color: '#f8f9fa',
+          matrix: at(0, 0.7, 0),
+        },
+        ...Array.from({ length: 9 }, (_, index) => {
+          const angle = (index / 8) * Math.PI;
+          return {
+            geometry: ball(0.06),
+            color: ['#f06595', '#ffffff', '#fcc419'][index % 3] ?? '#f06595',
+            matrix: at(Math.cos(angle) * 0.34, 0.7 + Math.sin(angle) * 0.34, 0),
+          };
+        }),
+      ]);
+    case 'cactus':
+      return bake([
+        { geometry: cyl(0.08, 0.09, 0.6, 7), color: '#2b8a3e' },
+        { geometry: ball(0.08), color: '#2b8a3e', matrix: at(0, 0.6, 0) },
+        { geometry: cyl(0.05, 0.05, 0.22, 6), color: '#2b8a3e', matrix: at(0.15, 0.28, 0) },
+        { geometry: cube(0.12, 0.05, 0.05), color: '#2b8a3e', matrix: at(0.08, 0.28, 0) },
+        { geometry: cyl(0.05, 0.05, 0.18, 6), color: '#2b8a3e', matrix: at(-0.14, 0.36, 0) },
+        { geometry: cube(0.1, 0.05, 0.05), color: '#2b8a3e', matrix: at(-0.08, 0.36, 0) },
+        { geometry: ball(0.04), color: '#f783ac', matrix: at(0, 0.67, 0) },
+      ]);
+    case 'barrel':
+      return bake([
+        { geometry: cyl(0.13, 0.12, 0.3, 9), color: '#8d5a3b', matrix: at(-0.12, 0, 0.05) },
+        { geometry: cyl(0.135, 0.135, 0.03, 9), color: '#495057', matrix: at(-0.12, 0.25, 0.05) },
+        { geometry: cyl(0.12, 0.11, 0.26, 9), color: '#a0673c', matrix: at(0.16, 0, -0.08) },
+        { geometry: cyl(0.125, 0.125, 0.03, 9), color: '#495057', matrix: at(0.16, 0.2, -0.08) },
+      ]);
+    case 'wagon-wheel':
+      return bake([
+        {
+          geometry: new THREE.TorusGeometry(0.28, 0.035, 5, 14),
+          color: '#8d5a3b',
+          matrix: at(0, 0.3, 0).multiply(new THREE.Matrix4().makeRotationY(0.4)),
+        },
+        ...[0, 1, 2, 3].map((index) => ({
+          geometry: cube(0.03, 0.54, 0.03).translate(0, -0.27, 0),
+          color: '#a0673c',
+          matrix: at(0, 0.3, 0).multiply(
+            new THREE.Matrix4()
+              .makeRotationY(0.4)
+              .multiply(new THREE.Matrix4().makeRotationZ((index * Math.PI) / 4)),
+          ),
+        })),
+      ]);
+    case 'rocket':
+      return bake([
+        { geometry: cyl(0.12, 0.14, 0.7, 10), color: '#f1f3f5', matrix: at(0, 0.12, 0) },
+        { geometry: coneGeo(0.12, 0.3, 10), color: '#e03131', matrix: at(0, 0.82, 0) },
+        ...[0, 1, 2].map((index) => ({
+          geometry: cube(0.04, 0.24, 0.18),
+          color: '#e03131',
+          matrix: at(
+            Math.cos((index * 2 * Math.PI) / 3) * 0.14,
+            0.02,
+            Math.sin((index * 2 * Math.PI) / 3) * 0.14,
+            [1, 1, 1],
+            -(index * 2 * Math.PI) / 3,
+          ),
+        })),
+        {
+          geometry: cyl(0.05, 0.05, 0.02, 8),
+          color: '#4dabf7',
+          matrix: at(0, 0.6, 0.12).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)),
+        },
+        { geometry: cube(0.4, 0.04, 0.4), color: '#868e96' },
+      ]);
+    case 'crystal':
+      return bake([
+        { geometry: cube(0.36, 0.06, 0.36), color: '#495057' },
+        { geometry: coneGeo(0.12, 0.6, 6), color: '#b197fc', matrix: at(0, 0.05, 0) },
+        {
+          geometry: coneGeo(0.08, 0.36, 6),
+          color: '#9775fa',
+          matrix: at(0.12, 0.05, 0.06, [1, 1, 1], 0.4).multiply(
+            new THREE.Matrix4().makeRotationZ(-0.35),
+          ),
+        },
+        {
+          geometry: coneGeo(0.07, 0.3, 6),
+          color: '#d0bfff',
+          matrix: at(-0.1, 0.05, -0.08).multiply(new THREE.Matrix4().makeRotationZ(0.4)),
+        },
+      ]);
+    case 'dead-tree':
+      return bake([
+        { geometry: cyl(0.04, 0.08, 0.7, 5), color: '#5c4033' },
+        {
+          geometry: cyl(0.02, 0.035, 0.3, 4),
+          color: '#5c4033',
+          matrix: at(0.08, 0.5, 0).multiply(new THREE.Matrix4().makeRotationZ(-0.8)),
+        },
+        {
+          geometry: cyl(0.02, 0.03, 0.26, 4),
+          color: '#5c4033',
+          matrix: at(-0.06, 0.4, 0.04).multiply(new THREE.Matrix4().makeRotationZ(0.9)),
+        },
+        {
+          geometry: cyl(0.015, 0.025, 0.2, 4),
+          color: '#5c4033',
+          matrix: at(0, 0.62, -0.05).multiply(new THREE.Matrix4().makeRotationX(0.7)),
+        },
+      ]);
+    case 'gravestone':
+      return bake([
+        { geometry: cube(0.3, 0.36, 0.08), color: '#adb5bd', matrix: at(0, 0, -0.1) },
+        {
+          geometry: cyl(0.15, 0.15, 0.08, 10).rotateX(Math.PI / 2),
+          color: '#adb5bd',
+          matrix: at(0, 0.36, -0.1),
+        },
+        { geometry: cube(0.32, 0.03, 0.5), color: '#5c7a3a', matrix: at(0, 0, 0.12) },
+      ]);
+    case 'pumpkin':
+      return bake([
+        { geometry: ball(0.16, 1), color: '#f76707', matrix: at(-0.1, 0.12, 0, [1.2, 0.85, 1.2]) },
+        { geometry: cyl(0.02, 0.025, 0.07, 5), color: '#2b8a3e', matrix: at(-0.1, 0.24, 0) },
+        {
+          geometry: ball(0.11, 1),
+          color: '#fd7e14',
+          matrix: at(0.16, 0.08, 0.1, [1.2, 0.85, 1.2]),
+        },
+        { geometry: cyl(0.015, 0.02, 0.05, 5), color: '#2b8a3e', matrix: at(0.16, 0.16, 0.1) },
+      ]);
+    case 'tiki-torch':
+      return bake([
+        { geometry: cyl(0.03, 0.04, 0.7, 6), color: '#a0673c' },
+        { geometry: cyl(0.07, 0.05, 0.12, 7), color: '#6b4226', matrix: at(0, 0.7, 0) },
+        { geometry: coneGeo(0.06, 0.16, 6), color: '#ff922b', matrix: at(0, 0.8, 0) },
+        { geometry: coneGeo(0.035, 0.1, 5), color: '#ffd43b', matrix: at(0, 0.82, 0) },
       ]);
   }
 }

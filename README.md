@@ -20,8 +20,12 @@ ride models to the guests, is made in code for this game.
   benches; handymen, mechanics, security guards and entertainers; ride breakdowns and
   inspections; vandalism; and research that invents new rides over time.
 
-It's being built in stages: the park, coasters, and staff and research are in; landscaping
-and water, then scenarios, come next.
+- **Landscape** (`src/sim/park.ts`, `beauty.ts`): brush tools to raise, lower and level land
+  and to paint it; lakes whose water finds its own level; themed scenery; and a beauty map
+  that makes nearby rides more exciting and passing guests happier.
+
+It's being built in stages: the park, coasters, staff and research, and landscaping are in;
+scenarios come next.
 
 Part of [Jake's hub](https://raylmao.com). Scaffolded from the hub's app template, so it shares
 the hub's theme, font and "back to the hub" bar (see `src/hub/`).

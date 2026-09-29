@@ -13,6 +13,7 @@ import {
   think,
   type Guest,
 } from './guests';
+import { beautyMap, sceneryBonus } from './beauty';
 import { dropJob, guarded, inspectionDue, itemAt, itemSide, updateStaff } from './crew';
 import { Navigator } from './navigation';
 import { BIN_CAPACITY, emptyLedger, MONTHS, USE, type Park, type Ride } from './park';
@@ -623,6 +624,12 @@ export class World {
       think(guest, 'Someone’s smashed things up here.', day);
       guest.happiness = Math.max(0, guest.happiness - 0.005);
     }
+    // Pretty surroundings lift the mood.
+    const beauty = beautyMap(park)[index] ?? 0;
+    if (beauty > 1.2) {
+      guest.happiness = Math.min(1, guest.happiness + Math.min(0.012, beauty * 0.003));
+      if (park.random.chance(0.08)) think(guest, 'The scenery here is lovely.', day);
+    }
     const busy = guest.goal?.kind === 'ride' && guest.goalTime < 60;
     if (item === 'bench' && park.smashed[index] === 0 && guest.energy < 0.4 && !busy) {
       const side = itemSide(park, tile.x, tile.z);
@@ -886,6 +893,9 @@ export class World {
 
   private newDay() {
     const park = this.park;
+    for (const ride of park.rides) {
+      if (RIDE_TYPES[ride.type].kind === 'ride') ride.sceneryBonus = sceneryBonus(park, ride);
+    }
     // Rides wear out a little each day and sometimes break down; unreliable ones more often.
     for (const ride of park.rides) {
       if (RIDE_TYPES[ride.type].kind !== 'ride' || ride.broken || ride.failing) continue;

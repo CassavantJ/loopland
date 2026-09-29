@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 import { DIRECTIONS, DX, DZ, HEIGHT_STEP, type Direction } from '../sim/grid';
-import { USE, type Park } from '../sim/park';
+import { SURFACES, USE, type Park } from '../sim/park';
 
 /** Builds non-indexed triangles with per-vertex colours. */
 class Builder {
@@ -45,6 +45,10 @@ const hash = (x: number, z: number) => {
 
 const GRASS = new THREE.Color('#79c257');
 const GRASS_OUTSIDE = new THREE.Color('#8aa874');
+const LAKE_BED = new THREE.Color('#8c7a52');
+const SURFACE_COLOURS = SURFACES.map((surface) => new THREE.Color(surface.colour));
+const WATER = new THREE.Color('#4dabf7');
+const WATER_SIDE = new THREE.Color('#1c7ed6');
 const DIRT = new THREE.Color('#8d6e4b');
 const DIRT_DARK = new THREE.Color('#6d5238');
 const SKIRT_DEPTH = -0.8;
@@ -57,7 +61,10 @@ export function terrainGeometry(park: Park): THREE.BufferGeometry {
   for (let z = 0; z < park.depth; z++) {
     for (let x = 0; x < park.width; x++) {
       const owned = park.isOwned(x, z) || park.useAt(x, z) === USE.gate;
-      color.copy(owned ? GRASS : GRASS_OUTSIDE);
+      const paint = SURFACE_COLOURS[park.surface[park.index(x, z)] ?? 0] ?? GRASS;
+      color.copy(owned ? paint : GRASS_OUTSIDE);
+      // Lake beds are sandy and dim.
+      if (park.underwater(x, z)) color.lerp(LAKE_BED, 0.6);
       const shade = (hash(x, z) - 0.5) * 0.06 + ((x + z) % 2 === 0 ? 0.015 : -0.015);
       color.offsetHSL(0, 0, shade + terrain.base(x, z) * 0.004);
       const nw = point(x, z);
@@ -228,5 +235,50 @@ export function cornerGeometry(park: Park, cx: number, cz: number): THREE.Buffer
     { x: cx, y, z: cz - r },
     white,
   );
+  return out.build();
+}
+
+/** Lakes: a surface at each tile's water level, with sides where the water stands above land. */
+export function waterGeometry(park: Park): THREE.BufferGeometry {
+  const out = new Builder();
+  const { terrain } = park;
+  const levelAt = (x: number, z: number) =>
+    park.underwater(x, z) ? (park.water[park.index(x, z)] ?? 0) * HEIGHT_STEP - 0.03 : null;
+  for (let z = 0; z < park.depth; z++) {
+    for (let x = 0; x < park.width; x++) {
+      const y = levelAt(x, z);
+      if (y === null) continue;
+      out.quad(
+        { x, y, z },
+        { x, y, z: z + 1 },
+        { x: x + 1, y, z: z + 1 },
+        { x: x + 1, y, z },
+        WATER,
+      );
+      // Sides: down to the land on any edge where the neighbour's water is lower (or none).
+      const edges: [number, number, [number, number], [number, number]][] = [
+        [0, -1, [x + 1, z], [x, z]],
+        [1, 0, [x + 1, z + 1], [x + 1, z]],
+        [0, 1, [x, z + 1], [x + 1, z + 1]],
+        [-1, 0, [x, z], [x, z + 1]],
+      ];
+      for (const [dx, dz, [ax, az], [bx, bz]] of edges) {
+        const other = park.inside(x + dx, z + dz) ? levelAt(x + dx, z + dz) : null;
+        if (other !== null && other >= y) continue;
+        const groundA = terrain.corner(ax, az) * HEIGHT_STEP;
+        const groundB = terrain.corner(bx, bz) * HEIGHT_STEP;
+        const bottomA = Math.min(y, Math.max(groundA, other ?? -Infinity));
+        const bottomB = Math.min(y, Math.max(groundB, other ?? -Infinity));
+        if (bottomA >= y - 0.01 && bottomB >= y - 0.01) continue;
+        out.quad(
+          { x: ax, y, z: az },
+          { x: ax, y: bottomA, z: az },
+          { x: bx, y: bottomB, z: bz },
+          { x: bx, y, z: bz },
+          WATER_SIDE,
+        );
+      }
+    }
+  }
   return out.build();
 }

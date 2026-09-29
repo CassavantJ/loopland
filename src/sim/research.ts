@@ -27,6 +27,7 @@ export const STARTING: readonly RideTypeId[] = [
 export const RESEARCH_ORDER: readonly RideTypeId[] = [
   'ice-cream-stall',
   'bumper-cars',
+  'paddle-boats',
   'swing-ship',
   'balloon-stall',
   'wooden-coaster',

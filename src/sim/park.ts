@@ -11,6 +11,7 @@ import {
 } from './catalog';
 import type { CoasterState } from './coasters';
 import { newResearch, type Research } from './research';
+import { cellTile, pieceCells, pieceEnd } from './track';
 import type { Staff } from './staff';
 import { DIRECTIONS, DX, DZ, Terrain, turn, type Direction, type Tile } from './grid';
 import { Random } from './random';
@@ -74,6 +75,8 @@ export interface Ride {
   downtime: number;
   /** A breakdown waiting for the current ride cycle to end. */
   failing: boolean;
+  /** Extra excitement from the scenery and water around it. */
+  sceneryBonus?: number;
 }
 
 export interface Placement {
@@ -102,6 +105,22 @@ export const emptyLedger = (): Ledger => ({
   research: 0,
   interest: 0,
 });
+
+export type LandMode = 'raise' | 'lower' | 'level';
+
+/** Ground paints: the colour of the land. */
+export const SURFACES = [
+  { name: 'Grass', colour: '#79c257' },
+  { name: 'Meadow', colour: '#a3cf62' },
+  { name: 'Dark grass', colour: '#4f9a45' },
+  { name: 'Sand', colour: '#e6d29a' },
+  { name: 'Dirt', colour: '#a07a52' },
+  { name: 'Rock', colour: '#98989c' },
+] as const;
+
+const WATER_COST = 500;
+const PAINT_COST = 100;
+const MAX_WATER = 40;
 
 /** Litter a bin holds before it overflows. */
 export const BIN_CAPACITY = 8;
@@ -139,6 +158,10 @@ export class Park {
   readonly binFill: Uint8Array;
   /** Path items smashed by angry guests. */
   readonly smashed: Uint8Array;
+  /** Water surface height per tile, in height steps; 0 means dry. */
+  readonly water: Uint8Array;
+  /** Ground paint per tile: an index into SURFACES. */
+  readonly surface: Uint8Array;
   gate: Tile;
   staff: Staff[] = [];
   nextStaffId = 1;
@@ -182,6 +205,8 @@ export class Park {
     this.vomit = new Uint8Array(tiles);
     this.binFill = new Uint8Array(tiles);
     this.smashed = new Uint8Array(tiles);
+    this.water = new Uint8Array(tiles);
+    this.surface = new Uint8Array(tiles);
     this.money = options.money;
     this.entranceFee = 1_000;
     this.random = new Random(options.seed);
@@ -277,6 +302,9 @@ export class Park {
     if (use !== USE.empty && use !== USE.path && use !== USE.queue && use !== USE.scenery) {
       return { ok: false, reason: 'Something’s in the way.', cost: 0 };
     }
+    if (this.underwater(x, z)) {
+      return { ok: false, reason: 'You can’t build a path under water.', cost: 0 };
+    }
     if (!this.terrain.pathShape(x, z)) {
       return {
         ok: false,
@@ -307,6 +335,7 @@ export class Park {
       return { ok: false, reason: 'The park doesn’t own this land.', cost: 0 };
     if (this.useAt(x, z) !== USE.empty)
       return { ok: false, reason: 'Something’s in the way.', cost: 0 };
+    if (this.underwater(x, z)) return { ok: false, reason: 'That would be under water.', cost: 0 };
     const cost = SCENERY[id].cost;
     if (cost > this.money) return { ok: false, reason: 'Not enough money.', cost };
     return { ok: true, reason: '', cost };
@@ -382,6 +411,27 @@ export class Park {
       if (use !== USE.empty && use !== USE.scenery) return fail('Something’s in the way.');
     }
 
+    if (spec.water) {
+      // Boats float on a lake at least a step deep; their entrance and exit stand on dry land.
+      let level = 0;
+      for (const tile of tiles) {
+        if (!this.deepWater(tile.x, tile.z)) return fail('This needs a lake at least a step deep.');
+        const here = this.water[this.index(tile.x, tile.z)] ?? 0;
+        if (level !== 0 && here !== level) return fail('The water needs to be all one level.');
+        level = here;
+      }
+      for (const tile of [entrance, exit]) {
+        if (!tile) continue;
+        if (this.underwater(tile.x, tile.z) || !this.terrain.pathShape(tile.x, tile.z)) {
+          return fail('The entrance and exit need dry, fairly flat land by the water.');
+        }
+      }
+      if (spec.cost > this.money) return fail('Not enough money.', spec.cost);
+      return { ok: true, reason: '', cost: spec.cost, tiles: all, entrance, exit, height: level };
+    }
+    if (all.some((tile) => this.underwater(tile.x, tile.z)))
+      return fail('That would be under water.');
+
     // Level the ground to the most common height under it, if that doesn't disturb anything.
     const heights = new Map<number, number>();
     for (const tile of all) {
@@ -417,8 +467,8 @@ export class Park {
     const plan = this.placement(type, x, z, facing);
     if (!plan.ok) return null;
     const spec = RIDE_TYPES[type];
-    const levelled = plan.tiles.some((tile) => !this.terrain.isFlat(tile.x, tile.z));
-    for (let pass = 0; pass < 2; pass++) {
+    const levelled = !spec.water && plan.tiles.some((tile) => !this.terrain.isFlat(tile.x, tile.z));
+    for (let pass = 0; pass < 2 && !spec.water; pass++) {
       for (const tile of plan.tiles)
         this.terrain.level(tile.x, tile.z, tile.x, tile.z, plan.height);
     }
@@ -532,29 +582,199 @@ export class Park {
 
   /** Raises or lowers one corner of the land, with neighbours following. */
   terraform(cx: number, cz: number, by: 1 | -1): { ok: boolean; reason: string } {
-    if (cx < 0 || cz < 0 || cx > this.width || cz > this.depth)
-      return { ok: false, reason: 'Off the map.' };
+    return this.editLand(cx, cz, cx, cz, by > 0 ? 'raise' : 'lower');
+  }
+
+  /**
+   * Reshapes the land over a rectangle of corners: raise or lower it a step, or level it to
+   * `target`. Land around follows so no slope is steeper than one step. Nothing built may be
+   * disturbed, paths must stay walkable and dry, and track must stay clear of the ground.
+   */
+  landCheck(
+    cx0: number,
+    cz0: number,
+    cx1: number,
+    cz1: number,
+    mode: LandMode,
+    target = 0,
+  ): { ok: boolean; reason: string; cost: number; trial: Terrain | null } {
+    const fail = (reason: string) => ({ ok: false, reason, cost: 0, trial: null });
     const trial = new Terrain(this.width, this.depth, this.terrain.corners.slice());
-    trial.setCorner(cx, cz, trial.corner(cx, cz) + by);
-    const moved = trial.smooth(cx, cz, cx, cz) + 1;
+    let moved = 0;
+    for (let cz = Math.max(0, cz0); cz <= Math.min(this.depth, cz1); cz++) {
+      for (let cx = Math.max(0, cx0); cx <= Math.min(this.width, cx1); cx++) {
+        const before = trial.corner(cx, cz);
+        const after = mode === 'raise' ? before + 1 : mode === 'lower' ? before - 1 : target;
+        trial.setCorner(cx, cz, after);
+        moved += Math.abs(trial.corner(cx, cz) - before);
+      }
+    }
+    moved += trial.smooth(cx0, cz0, cx1, cz1);
+    if (moved === 0) return fail(mode === 'level' ? 'Already level.' : 'Can’t go any further.');
+    const track = this.trackFloor();
     for (let tz = 0; tz < this.depth; tz++) {
       for (let tx = 0; tx < this.width; tx++) {
         const before = this.terrain.tileCorners(tx, tz);
         const after = trial.tileCorners(tx, tz);
         if (before.every((value, corner) => value === after[corner])) continue;
-        if (!this.isOwned(tx, tz)) return { ok: false, reason: 'The park doesn’t own that land.' };
+        if (!this.isOwned(tx, tz)) return fail('The park doesn’t own that land.');
+        const index = this.index(tx, tz);
+        const floor = track.get(index);
+        if (floor !== undefined && Math.max(...after) > floor) {
+          return fail('A coaster’s track is in the way.');
+        }
         const use = this.useAt(tx, tz);
-        if (use === USE.scenery) continue;
+        if (use === USE.empty || use === USE.scenery) continue;
         if (use === USE.path || use === USE.queue) {
-          if (!trial.pathShape(tx, tz)) return { ok: false, reason: 'A path is in the way.' };
+          if (!trial.pathShape(tx, tz)) return fail('A path is in the way.');
+          const level = this.water[index] ?? 0;
+          if (level > 0 && level > Math.min(...after)) return fail('That would flood a path.');
           continue;
         }
-        if (use !== USE.empty) return { ok: false, reason: 'Something’s built there.' };
+        return fail('Something’s built there.');
       }
     }
     const cost = moved * EARTH_COST;
+    if (cost > this.money) return fail('Not enough money.');
+    return { ok: true, reason: '', cost, trial };
+  }
+
+  editLand(
+    cx0: number,
+    cz0: number,
+    cx1: number,
+    cz1: number,
+    mode: LandMode,
+    target = 0,
+  ): { ok: boolean; reason: string } {
+    const check = this.landCheck(cx0, cz0, cx1, cz1, mode, target);
+    if (!check.ok || !check.trial) return check;
+    this.terrain.corners.set(check.trial.corners);
+    this.spend(check.cost, 'construction');
+    this.changed(true);
+    return { ok: true, reason: '' };
+  }
+
+  /** The lowest point of any coaster track over each tile, in height steps. */
+  private trackFloor(): Map<number, number> {
+    const floors = new Map<number, number>();
+    for (const ride of this.rides) {
+      for (const placed of ride.coaster?.pieces ?? []) {
+        const end = pieceEnd(placed.id, placed.start);
+        const low = Math.min(placed.start.h, end.h);
+        for (const cell of pieceCells(placed.id)) {
+          const tile = cellTile(placed.start, cell);
+          const index = this.index(tile.x, tile.z);
+          floors.set(index, Math.min(floors.get(index) ?? Infinity, low));
+        }
+      }
+    }
+    return floors;
+  }
+
+  /** Whether water covers any of a tile. */
+  underwater(x: number, z: number): boolean {
+    if (!this.inside(x, z)) return false;
+    const level = this.water[this.index(x, z)] ?? 0;
+    return level > 0 && level > this.terrain.base(x, z);
+  }
+
+  /** Whether water covers all of a tile, with room to float a boat. */
+  deepWater(x: number, z: number): boolean {
+    if (!this.inside(x, z)) return false;
+    const level = this.water[this.index(x, z)] ?? 0;
+    return level > 0 && level > Math.max(...this.terrain.tileCorners(x, z));
+  }
+
+  /** Raises or lowers the water over a rectangle of tiles by one step. */
+  waterCheck(
+    x0: number,
+    z0: number,
+    x1: number,
+    z1: number,
+    raise: boolean,
+  ): { ok: boolean; reason: string; cost: number; levels: Map<number, number> } {
+    const levels = new Map<number, number>();
+    const fail = (reason: string) => ({ ok: false, reason, cost: 0, levels });
+    // Water finds its own level: the whole patch moves to one surface height, a step above
+    // (or below) the highest water or lake bed in it.
+    let surface = 0;
+    for (let z = z0; z <= z1; z++) {
+      for (let x = x0; x <= x1; x++) {
+        if (!this.inside(x, z)) continue;
+        const level = this.water[this.index(x, z)] ?? 0;
+        surface = Math.max(surface, raise ? Math.max(level, this.terrain.base(x, z)) : level);
+      }
+    }
+    const goal = raise ? Math.min(MAX_WATER, surface + 1) : surface - 1;
+    for (let z = z0; z <= z1; z++) {
+      for (let x = x0; x <= x1; x++) {
+        if (!this.inside(x, z)) continue;
+        if (!this.isOwned(x, z)) return fail('The park doesn’t own that land.');
+        const index = this.index(x, z);
+        const level = this.water[index] ?? 0;
+        if (!raise && level === 0) continue;
+        const corners = this.terrain.tileCorners(x, z);
+        const next = goal <= Math.min(...corners) ? 0 : goal;
+        if (next === level) continue;
+        const use = this.useAt(x, z);
+        if (next > Math.min(...corners) && use !== USE.empty && use !== USE.scenery) {
+          return fail('Something’s in the way of the water.');
+        }
+        levels.set(index, next);
+      }
+    }
+    if (levels.size === 0) return fail(raise ? 'Can’t go any higher.' : 'No water to lower here.');
+    const cost = levels.size * WATER_COST;
+    if (cost > this.money) return fail('Not enough money.');
+    return { ok: true, reason: '', cost, levels };
+  }
+
+  editWater(
+    x0: number,
+    z0: number,
+    x1: number,
+    z1: number,
+    raise: boolean,
+  ): { ok: boolean; reason: string } {
+    const check = this.waterCheck(x0, z0, x1, z1, raise);
+    if (!check.ok) return check;
+    for (const [index, level] of check.levels) {
+      this.water[index] = level;
+      // Trees and flowers don't survive being drowned.
+      const x = index % this.width;
+      const z = Math.floor(index / this.width);
+      if (this.use[index] === USE.scenery && this.underwater(x, z)) {
+        this.use[index] = USE.empty;
+        this.ref[index] = 0;
+      }
+    }
+    this.spend(check.cost, 'construction');
+    this.changed(true);
+    return { ok: true, reason: '' };
+  }
+
+  /** Paints the ground: grass, sand, dirt, rock and so on. */
+  paint(
+    x0: number,
+    z0: number,
+    x1: number,
+    z1: number,
+    surface: number,
+  ): { ok: boolean; reason: string } {
+    let painted = 0;
+    for (let z = z0; z <= z1; z++) {
+      for (let x = x0; x <= x1; x++) {
+        if (!this.isOwned(x, z)) continue;
+        const index = this.index(x, z);
+        if (this.surface[index] === surface) continue;
+        this.surface[index] = surface;
+        painted++;
+      }
+    }
+    if (painted === 0) return { ok: false, reason: 'Already painted.' };
+    const cost = painted * PAINT_COST;
     if (cost > this.money) return { ok: false, reason: 'Not enough money.' };
-    this.terrain.corners.set(trial.corners);
     this.spend(cost, 'construction');
     this.changed(true);
     return { ok: true, reason: '' };
@@ -633,6 +853,8 @@ export class Park {
       vomit: Array.from(this.vomit),
       binFill: Array.from(this.binFill),
       smashed: Array.from(this.smashed),
+      water: Array.from(this.water),
+      surface: Array.from(this.surface),
       staff: this.staff.map((member) => ({
         ...member,
         job: null,
@@ -673,6 +895,8 @@ export class Park {
     if (saved.vomit) park.vomit.set(saved.vomit);
     if (saved.binFill) park.binFill.set(saved.binFill);
     if (saved.smashed) park.smashed.set(saved.smashed);
+    if (saved.water) park.water.set(saved.water);
+    if (saved.surface) park.surface.set(saved.surface);
     park.staff = saved.staff ?? [];
     park.nextStaffId = saved.nextStaffId ?? 1;
     // Parks saved before research existed keep everything they had.
@@ -712,6 +936,8 @@ export interface SavedPark {
   vomit?: number[];
   binFill?: number[];
   smashed?: number[];
+  water?: number[];
+  surface?: number[];
   staff?: Staff[];
   nextStaffId?: number;
   research?: Research;
