@@ -2,6 +2,7 @@ import { Check, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { loadProgress } from '../game/save';
+import { tutorialDone } from '../game/tutorial';
 import { money } from '../sim/catalog';
 import { describeObjective, SCENARIOS, startingRides, type ScenarioDef } from '../sim/scenarios';
 import styles from './Scenarios.module.css';
@@ -14,13 +15,14 @@ export function ScenarioPicker({
 }: {
   /** The scenario being played, if any: starting another replaces it. */
   current: string | null;
-  onStart: (def: ScenarioDef) => void;
+  onStart: (def: ScenarioDef, tutorial?: boolean) => void;
   /** Null when there's nothing to go back to. */
   onClose: (() => void) | null;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [chosen, setChosen] = useState<ScenarioDef>(SCENARIOS[0] ?? ({} as ScenarioDef));
   const [completed] = useState(loadProgress);
+  const [first] = useState(() => !tutorialDone());
   useEffect(() => {
     const element = dialog.current;
     if (element && !element.open) element.showModal();
@@ -43,6 +45,23 @@ export function ScenarioPicker({
           </button>
         )}
       </header>
+      {first && (
+        <div className={styles.newcomer}>
+          <p>
+            <strong>New to Loopland?</strong> The tutorial walks you through building your first
+            rides in Sunny Meadows. It takes a few minutes.
+          </p>
+          <button
+            type="button"
+            className={styles.start}
+            onClick={() => {
+              if (SCENARIOS[0]) onStart(SCENARIOS[0], true);
+            }}
+          >
+            Start the tutorial
+          </button>
+        </div>
+      )}
       <div className={styles.body}>
         <ul className={styles.list}>
           {SCENARIOS.map((def) => (

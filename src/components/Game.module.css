@@ -651,6 +651,20 @@
     display: none;
   }
 
+  /* Keep the top bar to two rows: numbers only, no little bars. */
+  .ratingBar {
+    display: none;
+  }
+
+  .stat {
+    gap: 0.25rem;
+    padding: 0 0.55rem;
+  }
+
+  .speeds button {
+    min-width: 2.1rem;
+  }
+
   .viewControls {
     bottom: auto;
     top: 6.4rem;
@@ -989,4 +1003,23 @@
   color: var(--ink);
   font: inherit;
   font-weight: 600;
+}
+
+/* The tutorial's pointer: a pulsing ring round a toolbar button. */
+.tool[data-highlight] {
+  position: relative;
+  box-shadow: 0 0 0 3px #fab005;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    box-shadow: 0 0 0 6px rgb(250 176 5 / 0.35);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool[data-highlight] {
+    animation: none;
+  }
 }

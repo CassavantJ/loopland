@@ -14,10 +14,12 @@ export function App() {
   const [park, setPark] = useState(() => saved ?? newPark());
   const [generation, setGeneration] = useState(0);
   const [picking, setPicking] = useState(saved === null);
-  const start = (def: ScenarioDef) => {
+  const [tutorial, setTutorial] = useState(false);
+  const start = (def: ScenarioDef, withTutorial = false) => {
     const fresh = newPark(def);
     savePark(fresh);
     setPark(fresh);
+    setTutorial(withTutorial);
     setGeneration((value) => value + 1);
     setPicking(false);
   };
@@ -27,6 +29,7 @@ export function App() {
         key={generation}
         park={park}
         paused={picking}
+        tutorial={tutorial}
         onNewGame={() => {
           setPicking(true);
         }}

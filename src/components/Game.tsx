@@ -2,7 +2,15 @@ import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } fro
 
 import { markCompleted, savePark } from '../game/save';
 import { describeObjective, scenario, type ScenarioDef } from '../sim/scenarios';
+import {
+  markTutorialDone,
+  nextStep,
+  startTutorial,
+  STEPS,
+  type TutorialState,
+} from '../game/tutorial';
 import { OutcomeDialog } from './Scenarios';
+import { Tutorial } from './Tutorial';
 import { buildDesign, placeCoaster } from '../sim/coasters';
 import { Interaction, type Selection, type Tool } from '../game/tools';
 import type { Park } from '../sim/park';
@@ -41,12 +49,15 @@ export function Game({
   paused,
   onNewGame,
   onStart,
+  tutorial: withTutorial = false,
 }: {
   park: Park;
   /** Held still while a menu over the whole game is open. */
   paused: boolean;
   onNewGame: () => void;
-  onStart: (def: ScenarioDef) => void;
+  onStart: (def: ScenarioDef, tutorial?: boolean) => void;
+  /** Start with the tutorial running. */
+  tutorial?: boolean;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [world] = useState(() => new World(park));
@@ -63,6 +74,9 @@ export function Game({
   const followRef = useRef<number | null>(null);
   // Re-render a few times a second so money, guests and panels stay current.
   useHeartbeat();
+  const [tutorial, setTutorial] = useState<TutorialState | null>(() =>
+    withTutorial ? startTutorial(world) : null,
+  );
   const touch = useSyncExternalStore(subscribeNone, coarse);
 
   const select = useEffectEvent((next: Selection) => {
@@ -304,6 +318,7 @@ export function Game({
           setSelection(null);
           setPanel('park');
         }}
+        quiet={tutorial !== null}
       />
       <div className={styles.viewControls}>
         <button
@@ -366,13 +381,33 @@ export function Game({
         onFocus={(x, z) => view.current?.focus(x, z)}
         onSelect={setSelection}
         onNewGame={onNewGame}
+        onTutorial={() => {
+          setPanel(null);
+          setTutorial(startTutorial(world));
+        }}
         onSave={() => savePark(world.park)}
         onGhost={(ghost) => {
           const ride = selection?.kind === 'ride' ? world.park.ride(selection.id) : undefined;
           view.current?.setTrackGhost(ghost && ride ? { ...ghost, type: ride.type } : null);
         }}
       />
+      {tutorial && (
+        <Tutorial
+          world={world}
+          state={tutorial}
+          selection={selection}
+          touch={touch}
+          onNext={() => {
+            setTutorial((current) => (current ? nextStep(world, current) : current));
+          }}
+          onClose={() => {
+            markTutorialDone();
+            setTutorial(null);
+          }}
+        />
+      )}
       <Toolbar
+        highlight={tutorial ? STEPS[tutorial.step]?.highlight : undefined}
         tool={tool}
         panel={panel}
         onTool={(next) => {

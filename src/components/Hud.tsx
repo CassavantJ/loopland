@@ -22,6 +22,7 @@ export function Hud({
   onMenu,
   onMessage,
   onGoal,
+  quiet,
 }: {
   world: World;
   speed: number;
@@ -29,6 +30,8 @@ export function Hud({
   onMenu: () => void;
   onMessage: (message: Message) => void;
   onGoal: () => void;
+  /** Hide the news ticker (the tutorial sits where it would be). */
+  quiet: boolean;
 }) {
   const goal = world.park.objective.kind === 'none' ? null : objectiveStatus(world);
   const park = world.park;
@@ -99,7 +102,7 @@ export function Hud({
           <Menu aria-hidden="true" />
         </button>
       </header>
-      {fresh && (
+      {fresh && !quiet && (
         <button
           type="button"
           className={styles.ticker}

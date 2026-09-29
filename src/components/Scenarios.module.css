@@ -220,3 +220,22 @@
     gap: 0;
   }
 }
+
+.newcomer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem 1rem;
+  margin: 1rem 1.3rem 0;
+  padding: 0.8rem 1rem;
+  border: 2px solid #fab005;
+  border-radius: 0.9rem;
+  background: #fff9db;
+}
+
+.newcomer p {
+  flex: 1 1 16rem;
+  margin: 0;
+  line-height: 1.45;
+}

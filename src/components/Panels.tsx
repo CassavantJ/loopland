@@ -53,6 +53,7 @@ interface Props {
   onFocus: (x: number, z: number) => void;
   onSelect: (selection: Selection) => void;
   onNewGame: () => void;
+  onTutorial: () => void;
   onSave: () => boolean;
   onGhost: GhostHandler;
 }
@@ -616,9 +617,14 @@ export function Panels(props: Props) {
               {saved || 'The park also saves itself every month.'}
             </span>
           </div>
-          <button type="button" className={styles.link} onClick={props.onNewGame}>
-            New game…
-          </button>
+          <div className={styles.row}>
+            <button type="button" className={styles.link} onClick={props.onNewGame}>
+              New game…
+            </button>
+            <button type="button" className={styles.link} onClick={props.onTutorial}>
+              Show the tutorial
+            </button>
+          </div>
           <h3 className={styles.subhead}>How to play</h3>
           <ul className={styles.help}>
             <li>

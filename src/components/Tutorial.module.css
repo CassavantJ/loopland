@@ -1,0 +1,121 @@
+.card {
+  --ink: #1d1a2a;
+  position: absolute;
+  top: 3.6rem;
+  left: 0.6rem;
+  z-index: 3;
+  display: grid;
+  gap: 0.45rem;
+  width: min(21rem, calc(100% - 4.6rem));
+  padding: 0.7rem 0.8rem 0.8rem;
+  border: 2px solid var(--ink);
+  border-radius: 1rem;
+  background: #fffdf6;
+  color: var(--ink);
+  box-shadow: 0 4px 0 var(--ink);
+  color-scheme: light;
+}
+
+.card[data-done] {
+  background: #ebfbee;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.count {
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6b6480;
+}
+
+.close {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+}
+
+.close svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.close:hover {
+  background: rgb(29 26 42 / 0.08);
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 900;
+}
+
+.tick {
+  width: 1.2rem;
+  height: 1.2rem;
+  color: #2b8a3e;
+}
+
+.text {
+  margin: 0;
+  font-size: 0.93rem;
+  line-height: 1.45;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.8rem;
+}
+
+.next {
+  min-height: 2.3rem;
+  padding: 0 1rem;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: #8ce99a;
+  color: var(--ink);
+  font-weight: 900;
+  box-shadow: 0 2px 0 var(--ink);
+}
+
+.waiting {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #6b6480;
+}
+
+.skip {
+  min-height: 2rem;
+  padding: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.card :focus-visible {
+  outline: 3px solid #1864ab;
+  outline-offset: 2px;
+}
+
+@media (max-width: 40rem) {
+  .card {
+    top: 6.4rem;
+  }
+}
