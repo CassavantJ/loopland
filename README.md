@@ -16,8 +16,12 @@ ride models to the guests, is made in code for this game.
 - **View** (`src/view/`): the terrain, paths and every model, built from primitives and kept
   in sync with the simulation.
 
-It's being built in stages: the park and coasters are in; staff, breakdowns and research,
-landscaping and water, and scenarios come next.
+- **Staff and upkeep** (`src/sim/crew.ts`, `staff.ts`, `research.ts`): litter, sick, bins and
+  benches; handymen, mechanics, security guards and entertainers; ride breakdowns and
+  inspections; vandalism; and research that invents new rides over time.
+
+It's being built in stages: the park, coasters, and staff and research are in; landscaping
+and water, then scenarios, come next.
 
 Part of [Jake's hub](https://raylmao.com). Scaffolded from the hub's app template, so it shares
 the hub's theme, font and "back to the hub" bar (see `src/hub/`).

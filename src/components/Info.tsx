@@ -11,7 +11,7 @@ import { useState } from 'react';
 
 import { money, RIDE_TYPES } from '../sim/catalog';
 import { fairPrice, ratingsOf, type Guest } from '../sim/guests';
-import type { Ride } from '../sim/park';
+import { DAY_SECONDS, type Ride } from '../sim/park';
 import type { World } from '../sim/world';
 import { CoasterResults, TrackBuilder, type GhostHandler } from './Builder';
 import styles from './Game.module.css';
@@ -158,6 +158,7 @@ export function RideInfo({
         )}
       </dl>
 
+      {spec.kind === 'ride' && <Maintenance world={world} ride={ride} />}
       {ride.coaster && <CoasterResults world={world} ride={ride} />}
       {spec.kind === 'ride' && (!ride.coaster || ride.coaster.stats) && (
         <dl className={styles.ratings}>
@@ -183,6 +184,55 @@ export function RideInfo({
       )}
 
       <DemolishButton world={world} ride={ride} onClosePanel={onClosePanel} />
+    </>
+  );
+}
+
+const INSPECTIONS = [
+  { days: 2, label: 'Every 2 days' },
+  { days: 5, label: 'Every 5 days' },
+  { days: 10, label: 'Every 10 days' },
+  { days: 0, label: 'Never' },
+];
+
+/** Reliability, breakdowns and how often a mechanic should check the ride. */
+function Maintenance({ world, ride }: { world: World; ride: Ride }) {
+  const [, refresh] = useState(0);
+  const park = world.park;
+  const since = Math.floor((park.time - ride.lastInspection) / DAY_SECONDS);
+  return (
+    <>
+      <dl className={styles.stats}>
+        <div>
+          <dt>Reliability</dt>
+          <dd>{Math.round(ride.reliability * 100)}%</dd>
+        </div>
+        <div>
+          <dt>Breakdowns · down this month</dt>
+          <dd>
+            {ride.breakdowns} · {Math.round(ride.downtime / DAY_SECONDS)} days
+          </dd>
+        </div>
+        <div>
+          <dt>Last inspected</dt>
+          <dd>{since <= 0 ? 'today' : `${since} ${since === 1 ? 'day' : 'days'} ago`}</dd>
+        </div>
+      </dl>
+      <div className={styles.segmented} role="group" aria-label="Inspections">
+        {INSPECTIONS.map((option) => (
+          <button
+            key={option.days}
+            type="button"
+            aria-pressed={ride.inspectEvery === option.days}
+            onClick={() => {
+              world.setInspection(ride, option.days);
+              refresh((value) => value + 1);
+            }}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
     </>
   );
 }
@@ -252,6 +302,8 @@ function describe(world: World, guest: Guest): string {
       return `Riding ${at?.name ?? 'a ride'}`;
     case 'buying':
       return at?.type === 'toilets' ? 'Using the toilets' : `Buying from ${at?.name ?? 'a stall'}`;
+    case 'sitting':
+      return 'Resting on a bench';
     case 'gone':
       return 'Gone home';
     case 'walking': {

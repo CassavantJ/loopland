@@ -1,5 +1,7 @@
 import {
   FerrisWheel,
+  FlaskConical,
+  HardHat,
   Footprints,
   ListOrdered,
   Mountain,
@@ -117,6 +119,22 @@ export function Toolbar({ tool, panel, onTool, onPanel }: Props) {
         active={building('bulldoze')}
         onClick={() => {
           onTool({ kind: 'bulldoze' });
+        }}
+      />
+      <ToolButton
+        label="Staff"
+        icon={<HardHat aria-hidden="true" />}
+        active={panel === 'staff'}
+        onClick={() => {
+          onPanel('staff');
+        }}
+      />
+      <ToolButton
+        label="Research"
+        icon={<FlaskConical aria-hidden="true" />}
+        active={panel === 'research'}
+        onClick={() => {
+          onPanel('research');
         }}
       />
       <ToolButton

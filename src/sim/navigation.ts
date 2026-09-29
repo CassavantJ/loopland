@@ -28,6 +28,8 @@ export class Navigator {
     const key = park.index(target.x, target.z);
     const cached = this.fields.get(key);
     if (cached) return cached;
+    // Staff head for all sorts of tiles; don't keep every field forever.
+    if (this.fields.size > 400) this.fields.clear();
     const field = new Int16Array(park.width * park.depth).fill(-1);
     if (park.isWalkable(target.x, target.z)) {
       const queue = new Int32Array(park.width * park.depth);

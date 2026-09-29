@@ -45,5 +45,6 @@ export function clearSave(store: Pick<Storage, 'removeItem'> | null = storage())
 }
 
 export function newPark(): Park {
-  return createPark(Math.floor(Math.random() * 1_000_000) + 1);
+  // A fresh park starts with a few rides; research invents the rest.
+  return createPark(Math.floor(Math.random() * 1_000_000) + 1, 48, false);
 }

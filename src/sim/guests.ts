@@ -3,7 +3,7 @@ import type { Direction, Tile } from './grid';
 import type { Ride } from './park';
 import type { Random } from './random';
 
-export type GuestState = 'walking' | 'queuing' | 'riding' | 'buying' | 'gone';
+export type GuestState = 'walking' | 'queuing' | 'riding' | 'buying' | 'sitting' | 'gone';
 
 export type Goal = { kind: 'ride'; ride: number } | { kind: 'leave' };
 
@@ -46,6 +46,10 @@ export interface Guest {
   thoughts: Thought[];
   holding: Item | null;
   hasMap: boolean;
+  /** Seconds left finishing food or a drink; then the wrapper or cup needs a bin. */
+  eating: number;
+  /** Seconds spent carrying rubbish, or −1 when empty-handed. */
+  rubbish: number;
   arrived: number;
   /** Game seconds before they start thinking about going home. */
   stay: number;
@@ -165,6 +169,8 @@ export function makeGuest(
     thoughts: [],
     holding: null,
     hasMap: false,
+    eating: 0,
+    rubbish: -1,
     arrived: time,
     stay: random.range(360, 900),
     look: {
@@ -189,7 +195,16 @@ export function driftNeeds(guest: Guest, dt: number): void {
   guest.hunger = clamp(guest.hunger + 0.0021 * dt);
   guest.thirst = clamp(guest.thirst + 0.0026 * dt);
   guest.toilet = clamp(guest.toilet + 0.0011 * dt);
-  guest.energy = clamp(guest.energy - (guest.state === 'walking' ? 0.0008 : 0.0003) * dt);
+  guest.energy = clamp(
+    guest.energy +
+      (guest.state === 'sitting' ? 0.02 : guest.state === 'walking' ? -0.0008 : -0.0003) * dt,
+  );
+  if (guest.eating > 0) {
+    guest.eating -= dt;
+    if (guest.eating <= 0) guest.rubbish = 0;
+  } else if (guest.rubbish >= 0) {
+    guest.rubbish += dt;
+  }
   guest.nausea = clamp(guest.nausea - 0.004 * dt);
   let mood = 0;
   if (guest.hunger > 0.75) mood -= 0.002;
@@ -253,6 +268,10 @@ export function afterRide(guest: Guest, ride: Ride, random: Random, day: number)
 /** A guest uses a stall: fed, watered or relieved. */
 export function afterStall(guest: Guest, ride: Ride, day: number): void {
   const spec = RIDE_TYPES[ride.type];
+  // Food and drinks take a while to finish, and leave a wrapper or cup behind.
+  if (spec.sells === 'burger' || spec.sells === 'drink' || spec.sells === 'ice-cream') {
+    guest.eating = 20 + (guest.id % 7) * 4;
+  }
   switch (spec.sells) {
     case 'burger':
       guest.hunger = clamp(guest.hunger - 0.75);

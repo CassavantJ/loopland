@@ -16,9 +16,11 @@ import { MONTHS, type Ledger } from '../sim/park';
 import type { World } from '../sim/world';
 import styles from './Game.module.css';
 import type { GhostHandler } from './Builder';
+import { ResearchPanel, StaffInfo, StaffPanel } from './Crew';
 import { GuestInfo, RideInfo } from './Info';
 
-export type PanelId = 'rides' | 'shops' | 'scenery' | 'land' | 'park' | 'money' | 'menu';
+export type PanelId =
+  'rides' | 'shops' | 'scenery' | 'land' | 'staff' | 'research' | 'park' | 'money' | 'menu';
 
 const FACINGS = ['north', 'east', 'south', 'west'];
 
@@ -78,7 +80,8 @@ function Catalog({
     <ul className={styles.catalog}>
       {items.map((item) => {
         const active = tool.kind === 'ride' && tool.type === item.id;
-        const affordable = item.cost <= world.park.money;
+        const invented = world.park.research.invented.includes(item.id);
+        const affordable = item.cost <= world.park.money && invented;
         return (
           <li key={item.id}>
             <button
@@ -97,6 +100,7 @@ function Catalog({
               <span className={styles.itemText}>
                 <strong>{item.name}</strong>
                 <small>{item.blurb}</small>
+                {!invented && <small className={styles.locked}>Not invented yet</small>}
                 <small>
                   {money(item.cost)}
                   {item.coaster
@@ -119,6 +123,7 @@ const LEDGER_NAMES: Record<keyof Ledger, string> = {
   construction: 'Construction',
   upkeep: 'Ride running costs',
   wages: 'Staff wages',
+  research: 'Research',
   interest: 'Loan interest',
 };
 
@@ -168,6 +173,24 @@ export function Panels(props: Props) {
         </Panel>
       );
     }
+  }
+  if (selection?.kind === 'staff') {
+    const staff = park.staff.find((member) => member.id === selection.id);
+    return (
+      <Panel title={staff?.name ?? 'Staff'} onClose={onClose}>
+        {staff ? (
+          <StaffInfo
+            world={world}
+            staff={staff}
+            following={props.following}
+            onFollow={props.onFollow}
+            onClosePanel={onClose}
+          />
+        ) : (
+          <p className={styles.small}>No longer works here.</p>
+        )}
+      </Panel>
+    );
   }
   if (selection?.kind === 'guest') {
     const guest = world.guest(selection.id);
@@ -317,6 +340,23 @@ export function Panels(props: Props) {
           </div>
         </Panel>
       );
+    case 'staff':
+      return (
+        <Panel title="Staff" onClose={onClose}>
+          <StaffPanel
+            world={world}
+            onSelect={(id) => {
+              props.onSelect({ kind: 'staff', id });
+            }}
+          />
+        </Panel>
+      );
+    case 'research':
+      return (
+        <Panel title="Research" onClose={onClose}>
+          <ResearchPanel world={world} />
+        </Panel>
+      );
     case 'park': {
       const thoughts = new Map<string, number>();
       for (const guest of world.guests) {
@@ -366,6 +406,14 @@ export function Panels(props: Props) {
             <div>
               <dt>Rides and stalls</dt>
               <dd>{park.rides.length}</dd>
+            </div>
+            <div>
+              <dt>Clean paths</dt>
+              <dd>{Math.round(world.cleanliness * 100)}%</dd>
+            </div>
+            <div>
+              <dt>Staff</dt>
+              <dd>{park.staff.length}</dd>
             </div>
           </dl>
           <h3 className={styles.subhead}>What guests are thinking</h3>

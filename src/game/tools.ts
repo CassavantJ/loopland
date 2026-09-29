@@ -22,7 +22,11 @@ export type Tool =
   | { kind: 'land'; raise: boolean }
   | { kind: 'bulldoze' };
 
-export type Selection = { kind: 'ride'; id: number } | { kind: 'guest'; id: number } | null;
+export type Selection =
+  | { kind: 'ride'; id: number }
+  | { kind: 'guest'; id: number }
+  | { kind: 'staff'; id: number }
+  | null;
 
 export interface ToolCallbacks {
   /** Something was clicked with the inspect tool. */
@@ -221,9 +225,9 @@ export class Interaction {
   };
 
   private inspect(clientX: number, clientY: number, pick: Pick | null) {
-    const guest = this.view.pickGuest(clientX, clientY, this.canvas);
-    if (guest !== null) {
-      this.callbacks.select({ kind: 'guest', id: guest });
+    const person = this.view.pickPerson(clientX, clientY, this.canvas);
+    if (person) {
+      this.callbacks.select(person);
       return;
     }
     const ride = pick ? this.world.park.rideAt(pick.tile.x, pick.tile.z) : undefined;

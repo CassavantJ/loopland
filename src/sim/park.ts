@@ -10,6 +10,8 @@ import {
   type SceneryId,
 } from './catalog';
 import type { CoasterState } from './coasters';
+import { newResearch, type Research } from './research';
+import type { Staff } from './staff';
 import { DIRECTIONS, DX, DZ, Terrain, turn, type Direction, type Tile } from './grid';
 import { Random } from './random';
 
@@ -59,6 +61,19 @@ export interface Ride {
   built: number;
   /** Roller coasters: their track, test results and train. */
   coaster?: CoasterState;
+  /** 0–1: how unlikely it is to break down. Falls with use, rises with inspections. */
+  reliability: number;
+  broken: boolean;
+  /** Game seconds when it last broke down, or was last inspected. */
+  brokenSince: number;
+  lastInspection: number;
+  /** Days between inspections; 0 means never. */
+  inspectEvery: number;
+  breakdowns: number;
+  /** Seconds out of action this month. */
+  downtime: number;
+  /** A breakdown waiting for the current ride cycle to end. */
+  failing: boolean;
 }
 
 export interface Placement {
@@ -73,7 +88,7 @@ export interface Placement {
 }
 
 export type Ledger = Record<
-  'construction' | 'rides' | 'food' | 'entrance' | 'upkeep' | 'wages' | 'interest',
+  'construction' | 'rides' | 'food' | 'entrance' | 'upkeep' | 'wages' | 'research' | 'interest',
   number
 >;
 
@@ -84,8 +99,12 @@ export const emptyLedger = (): Ledger => ({
   entrance: 0,
   upkeep: 0,
   wages: 0,
+  research: 0,
   interest: 0,
 });
+
+/** Litter a bin holds before it overflows. */
+export const BIN_CAPACITY = 8;
 
 export interface Message {
   day: number;
@@ -113,7 +132,17 @@ export class Park {
   /** Bench, bin or lamp on a path: index in PATH_ITEM_IDS + 1. */
   readonly pathItem: Uint8Array;
   readonly owned: Uint8Array;
+  /** Dropped litter and sick, per tile. */
+  readonly litter: Uint8Array;
+  readonly vomit: Uint8Array;
+  /** How full each bin is. */
+  readonly binFill: Uint8Array;
+  /** Path items smashed by angry guests. */
+  readonly smashed: Uint8Array;
   gate: Tile;
+  staff: Staff[] = [];
+  nextStaffId = 1;
+  research: Research = newResearch();
   rides: Ride[] = [];
   nextRideId = 1;
   money: number;
@@ -129,6 +158,8 @@ export class Park {
   version = 0;
   /** Bumped when the land itself changes shape. */
   landVersion = 0;
+  /** Bumped when litter, sick, bins or smashed items change. */
+  dirtVersion = 0;
 
   constructor(options: {
     width: number;
@@ -147,6 +178,10 @@ export class Park {
     this.facing = new Uint8Array(tiles);
     this.pathItem = new Uint8Array(tiles);
     this.owned = new Uint8Array(tiles);
+    this.litter = new Uint8Array(tiles);
+    this.vomit = new Uint8Array(tiles);
+    this.binFill = new Uint8Array(tiles);
+    this.smashed = new Uint8Array(tiles);
     this.money = options.money;
     this.entranceFee = 1_000;
     this.random = new Random(options.seed);
@@ -339,6 +374,7 @@ export class Park {
       height: 0,
     });
 
+    if (!this.research.invented.includes(type)) return fail('Not invented yet.');
     for (const tile of all) {
       if (!this.inside(tile.x, tile.z)) return fail('Off the edge of the park.');
       if (!this.isOwned(tile.x, tile.z)) return fail('The park doesn’t own this land.');
@@ -411,6 +447,7 @@ export class Park {
       monthIncome: 0,
       monthCustomers: 0,
       built: this.day,
+      ...maintenance(this.time),
     };
     const mark = (tile: Tile, use: Use) => {
       const index = this.index(tile.x, tile.z);
@@ -452,7 +489,7 @@ export class Park {
       const name = use === USE.scenery ? SCENERY[this.sceneryAt(x, z) ?? 'bush'].name : 'Path';
       this.use[index] = USE.empty;
       this.ref[index] = 0;
-      this.pathItem[index] = 0;
+      this.clearTile(index);
       this.earn(refund, 'construction');
       this.changed();
       return name;
@@ -462,6 +499,16 @@ export class Park {
     this.removeRide(ride);
     this.earn(refund, 'construction');
     return ride.name;
+  }
+
+  /** Wipes a tile's path furniture, litter and sick. */
+  clearTile(index: number): void {
+    this.pathItem[index] = 0;
+    this.litter[index] = 0;
+    this.vomit[index] = 0;
+    this.binFill[index] = 0;
+    this.smashed[index] = 0;
+    this.dirtVersion++;
   }
 
   /** Hook for the guest simulation to release anyone on or waiting for a ride. */
@@ -582,6 +629,19 @@ export class Park {
         phase: 'idle',
         timer: 0,
       })),
+      litter: Array.from(this.litter),
+      vomit: Array.from(this.vomit),
+      binFill: Array.from(this.binFill),
+      smashed: Array.from(this.smashed),
+      staff: this.staff.map((member) => ({
+        ...member,
+        job: null,
+        state: 'walking',
+        from: member.to,
+        progress: 1,
+      })),
+      nextStaffId: this.nextStaffId,
+      research: this.research,
       nextRideId: this.nextRideId,
       money: this.money,
       entranceFee: this.entranceFee,
@@ -608,12 +668,20 @@ export class Park {
     park.pathItem.set(saved.pathItem);
     park.owned.set(saved.owned);
     park.gate = saved.gate;
-    park.rides = saved.rides;
+    park.rides = saved.rides.map((ride) => ({ ...maintenance(saved.time), ...ride }));
+    if (saved.litter) park.litter.set(saved.litter);
+    if (saved.vomit) park.vomit.set(saved.vomit);
+    if (saved.binFill) park.binFill.set(saved.binFill);
+    if (saved.smashed) park.smashed.set(saved.smashed);
+    park.staff = saved.staff ?? [];
+    park.nextStaffId = saved.nextStaffId ?? 1;
+    // Parks saved before research existed keep everything they had.
+    park.research = saved.research ?? newResearch(true);
+    park.ledger = { ...emptyLedger(), ...saved.ledger };
     park.nextRideId = saved.nextRideId;
     park.entranceFee = saved.entranceFee;
     park.time = saved.time;
     park.rating = saved.rating;
-    park.ledger = saved.ledger;
     park.history = saved.history;
     return park;
   }
@@ -640,6 +708,27 @@ export interface SavedPark {
   ledger: Ledger;
   history: Park['history'];
   seed: number;
+  litter?: number[];
+  vomit?: number[];
+  binFill?: number[];
+  smashed?: number[];
+  staff?: Staff[];
+  nextStaffId?: number;
+  research?: Research;
+}
+
+/** Maintenance fields for a new ride. */
+export function maintenance(time: number) {
+  return {
+    reliability: 0.95,
+    broken: false,
+    brokenSince: 0,
+    lastInspection: time,
+    inspectEvery: 5,
+    breakdowns: 0,
+    downtime: 0,
+    failing: false,
+  };
 }
 
 /** The row of tiles just outside a footprint's front edge. */
@@ -657,8 +746,9 @@ function frontTiles(x: number, z: number, width: number, depth: number, facing: 
 }
 
 /** A new park: rolling hills at the edges, a flat middle, an entrance on the south edge. */
-export function createPark(seed = 1, size = 48): Park {
+export function createPark(seed = 1, size = 48, everything = true): Park {
   const park = new Park({ width: size, depth: size, seed, money: 2_500_000, name: 'Loopland' });
+  park.research = newResearch(everything);
   const { terrain } = park;
   const random = new Random(seed * 7 + 3);
   const base = 6;

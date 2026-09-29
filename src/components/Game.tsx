@@ -67,7 +67,12 @@ export function Game({ park, onNewPark }: { park: Park; onNewPark: () => void })
     speedRef.current = speed;
   }, [speed]);
   useEffect(() => {
-    followRef.current = following && selection?.kind === 'guest' ? selection.id : null;
+    followRef.current =
+      following && (selection?.kind === 'guest' || selection?.kind === 'staff')
+        ? selection.kind === 'staff'
+          ? -selection.id
+          : selection.id
+        : null;
   }, [following, selection]);
 
   // The engine: view, input and the simulation loop.
@@ -125,7 +130,14 @@ export function Game({ park, onNewPark }: { park: Park; onNewPark: () => void })
         steps++;
       }
       if (steps === 60) accumulated = 0;
-      const followed = followRef.current === null ? undefined : world.guest(followRef.current);
+      const id = followRef.current;
+      // Staff are followed by negative id, guests by positive.
+      const followed =
+        id === null
+          ? undefined
+          : id < 0
+            ? world.park.staff.find((member) => member.id === -id)
+            : world.guest(id);
       if (followed) {
         created.target.x += (followed.x - created.target.x) * Math.min(1, dt * 4);
         created.target.z += (followed.z - created.target.z) * Math.min(1, dt * 4);

@@ -743,3 +743,90 @@
   font-weight: 900;
   box-shadow: 0 3px 0 var(--ink);
 }
+
+/* Staff and research -------------------------------------------------------------------------- */
+
+.hires,
+.roster {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hires li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.55rem;
+  border: 2px solid rgb(29 26 42 / 0.15);
+  border-radius: 0.8rem;
+  background: #fff;
+}
+
+.hires .itemText {
+  flex: 1;
+}
+
+.uniform {
+  flex: none;
+  width: 1.6rem;
+  height: 1.6rem;
+  margin-top: 0.15rem;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+}
+
+.roster li {
+  display: grid;
+  gap: 0.05rem;
+}
+
+.roster small {
+  color: var(--muted);
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(4.5rem, 1fr));
+  gap: 0.3rem;
+}
+
+.segmented button {
+  display: grid;
+  justify-items: center;
+  gap: 0.05rem;
+  min-height: 2.4rem;
+  padding: 0.3rem 0.4rem;
+  border: 2px solid rgb(29 26 42 / 0.2);
+  border-radius: 0.6rem;
+  background: #fff;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.segmented button small {
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.segmented button[aria-pressed='true'] {
+  border-color: var(--ink);
+  background: #ffe066;
+}
+
+.project {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.project meter {
+  width: 100%;
+  height: 0.9rem;
+}
+
+.locked {
+  font-weight: 800;
+  color: #862e9c !important;
+}

@@ -13,8 +13,11 @@ import {
   think,
   type Guest,
 } from './guests';
+import { dropJob, guarded, inspectionDue, itemAt, itemSide, updateStaff } from './crew';
 import { Navigator } from './navigation';
-import { emptyLedger, MONTHS, USE, type Park, type Ride } from './park';
+import { BIN_CAPACITY, emptyLedger, MONTHS, USE, type Park, type Ride } from './park';
+import { currentProject, FUNDING, researchDay } from './research';
+import { makeStaff, STAFF, type Staff, type StaffRole } from './staff';
 
 /** Game seconds per simulation step. */
 export const TICK = 0.1;
@@ -43,6 +46,11 @@ export class World {
   private lines = new Map<number, Line>();
   /** Everyone who ever came in. */
   visitors = 0;
+  /** Jobs a staff member is already on its way to. */
+  readonly claims = new Set<string>();
+  /** How clean the paths are, 0-1, updated daily. */
+  cleanliness = 1;
+  private lastNag = -100;
 
   constructor(park: Park) {
     this.park = park;
@@ -82,7 +90,7 @@ export class World {
 
   /** Whether guests can use a ride: open, with a way in and a way out. */
   usable(ride: Ride): boolean {
-    if (!ride.open) return false;
+    if (!ride.open || ride.broken) return false;
     if (ride.coaster && (!ride.coaster.complete || !ride.coaster.stats)) return false;
     const target = this.target(ride);
     if (!target || !this.park.isWalkable(target.x, target.z)) return false;
@@ -103,6 +111,15 @@ export class World {
       return 'The track isn’t finished: bring it back round into the station.';
     if (coaster?.problem) return coaster.problem;
     if (coaster && !coaster.stats) return 'It needs a test run before it can open.';
+    if (ride.broken) {
+      const coming = this.claims.has(`ride:${ride.id}`);
+      const mechanics = this.park.staff.some((staff) => staff.role === 'mechanic');
+      return coming
+        ? 'Broken down. A mechanic is on the way.'
+        : mechanics
+          ? 'Broken down, waiting for a mechanic.'
+          : 'Broken down! Hire a mechanic to fix it.';
+    }
     if (!ride.open) return 'Closed.';
     const spec = RIDE_TYPES[ride.type];
     if (spec.kind === 'stall') return this.target(ride) ? null : 'The counter doesn’t face a path.';
@@ -135,6 +152,8 @@ export class World {
         return false;
       });
     }
+    for (const staff of park.staff) updateStaff(this, staff, dt);
+    this.entertain(dt);
     for (const ride of park.rides) this.updateRide(ride, dt);
     if (park.day !== day) this.newDay();
     if (park.month !== month) this.newMonth(month);
@@ -192,6 +211,14 @@ export class World {
         guest.timer -= dt;
         if (guest.timer <= 0) this.finishBuying(guest);
         break;
+      case 'sitting':
+        guest.timer -= dt;
+        guest.happiness = Math.min(1, guest.happiness + 0.003 * dt);
+        if (guest.timer <= 0 || guest.energy > 0.95) {
+          guest.state = 'walking';
+          guest.progress = 1;
+        }
+        break;
       case 'riding':
       case 'gone':
         break;
@@ -200,6 +227,12 @@ export class World {
       guest.nausea = 0.35;
       guest.happiness = Math.max(0, guest.happiness - 0.15);
       think(guest, 'I shouldn’t have eaten before that ride…', this.park.day);
+      this.mess(guest, 'vomit');
+    }
+    // Nobody carries a wrapper forever: with no bin in sight, it ends up on the ground.
+    if (guest.rubbish > 45 && guest.state !== 'riding') {
+      guest.rubbish = -1;
+      this.mess(guest, 'litter');
     }
   }
 
@@ -241,6 +274,7 @@ export class World {
       guest.state = 'gone';
       return;
     }
+    if (this.onTile(guest, tile)) return;
 
     if (guest.goal?.kind === 'ride') {
       const ride = park.ride(guest.goal.ride);
@@ -524,6 +558,124 @@ export class World {
     }
   }
 
+  /** Litter or sick where a guest stands, if it's a path. */
+  private mess(guest: Guest, kind: 'litter' | 'vomit') {
+    const park = this.park;
+    const x = Math.floor(guest.x);
+    const z = Math.floor(guest.z);
+    const use = park.useAt(x, z);
+    if (use !== USE.path && use !== USE.queue) return;
+    const layer = kind === 'litter' ? park.litter : park.vomit;
+    const index = park.index(x, z);
+    layer[index] = Math.min(200, (layer[index] ?? 0) + 1);
+    park.dirtVersion++;
+  }
+
+  /**
+   * What a walking guest notices on a tile: a bin for their rubbish, mess underfoot, a bench
+   * to rest on, or (if they're furious and nobody's watching) something to smash. Returns true
+   * if they sat down.
+   */
+  private onTile(guest: Guest, tile: Tile): boolean {
+    const park = this.park;
+    const day = park.day;
+    const index = park.index(tile.x, tile.z);
+    if (guest.rubbish >= 0) {
+      for (const spot of [tile, ...this.nav.neighbours(tile)]) {
+        const at = park.index(spot.x, spot.z);
+        if (itemAt(park, at) !== 'bin' || park.smashed[at] === 1) continue;
+        if ((park.binFill[at] ?? 0) < BIN_CAPACITY) {
+          park.binFill[at] = (park.binFill[at] ?? 0) + 1;
+        } else {
+          // Overflowing: it goes on the ground next to the bin.
+          park.litter[at] = Math.min(200, (park.litter[at] ?? 0) + 1);
+          think(guest, 'The bins here are overflowing.', day);
+        }
+        guest.rubbish = -1;
+        park.dirtVersion++;
+        break;
+      }
+    }
+    const litter = park.litter[index] ?? 0;
+    const vomit = park.vomit[index] ?? 0;
+    if (vomit > 0) {
+      guest.happiness = Math.max(0, guest.happiness - 0.02);
+      think(guest, 'Yuck! Someone’s been sick here.', day);
+    } else if (litter >= 3) {
+      guest.happiness = Math.max(0, guest.happiness - 0.01);
+      think(guest, 'The paths here are disgusting.', day);
+    }
+    const item = itemAt(park, index);
+    if (
+      item &&
+      park.smashed[index] === 0 &&
+      guest.happiness < 0.22 &&
+      !guarded(park, tile) &&
+      park.random.chance(0.04)
+    ) {
+      park.smashed[index] = 1;
+      park.dirtVersion++;
+      guest.happiness = Math.min(1, guest.happiness + 0.05);
+      think(guest, 'That’s what I think of this park!', day);
+      return false;
+    }
+    if (item && park.smashed[index] === 1 && park.random.chance(0.3)) {
+      think(guest, 'Someone’s smashed things up here.', day);
+      guest.happiness = Math.max(0, guest.happiness - 0.005);
+    }
+    const busy = guest.goal?.kind === 'ride' && guest.goalTime < 60;
+    if (item === 'bench' && park.smashed[index] === 0 && guest.energy < 0.4 && !busy) {
+      const side = itemSide(park, tile.x, tile.z);
+      guest.state = 'sitting';
+      guest.timer = 12 + park.random.range(0, 10);
+      guest.x = tile.x + 0.5 + side.dx * 0.8;
+      guest.z = tile.z + 0.5 + side.dz * 0.8;
+      guest.heading = side.dx > 0 ? 3 : side.dx < 0 ? 1 : side.dz > 0 ? 0 : 2;
+      think(guest, 'Ahh, a sit down.', day);
+      return true;
+    }
+    return false;
+  }
+
+  /** Entertainers cheer up everyone close by, queues most of all. */
+  private entertain(dt: number) {
+    const entertainers = this.park.staff.filter((staff) => staff.role === 'entertainer');
+    if (entertainers.length === 0) return;
+    for (const guest of this.guests) {
+      for (const staff of entertainers) {
+        const dx = guest.x - staff.x;
+        const dz = guest.z - staff.z;
+        if (dx * dx + dz * dz > 12) continue;
+        guest.happiness = Math.min(
+          1,
+          guest.happiness + (guest.state === 'queuing' ? 0.006 : 0.003) * dt,
+        );
+        break;
+      }
+    }
+  }
+
+  // Staff -------------------------------------------------------------------------------------
+
+  hire(role: StaffRole): Staff | null {
+    const park = this.park;
+    const at = this.gateInside;
+    if (!park.isWalkable(at.x, at.z)) return null;
+    const staff = makeStaff(park.nextStaffId++, role, at, park.day, park.random);
+    park.staff.push(staff);
+    const job = STAFF[role].name.toLowerCase();
+    park.post(`${staff.name} joined as ${/^[aeiou]/.test(job) ? 'an' : 'a'} ${job}.`);
+    return staff;
+  }
+
+  fire(id: number): void {
+    const park = this.park;
+    const staff = park.staff.find((member) => member.id === id);
+    if (!staff) return;
+    dropJob(this, staff);
+    park.staff = park.staff.filter((member) => member !== staff);
+  }
+
   private nearestWalkable(from: Tile): Tile | null {
     const park = this.park;
     for (let radius = 1; radius <= 6; radius++) {
@@ -541,6 +693,10 @@ export class World {
   private updateRide(ride: Ride, dt: number) {
     const spec = RIDE_TYPES[ride.type];
     if (spec.kind === 'stall') return;
+    if (ride.broken) {
+      ride.downtime += dt;
+      return;
+    }
     switch (ride.phase) {
       case 'idle':
         if (ride.open && ride.queue.length > 0) {
@@ -639,6 +795,41 @@ export class World {
     }
     ride.riders = [];
     ride.phase = 'idle';
+    if (ride.failing) this.breakDown(ride);
+  }
+
+  /** A ride stops working until a mechanic fixes it. */
+  private breakDown(ride: Ride) {
+    const park = this.park;
+    ride.failing = false;
+    ride.broken = true;
+    ride.brokenSince = park.time;
+    ride.breakdowns++;
+    ride.reliability = Math.max(0.2, ride.reliability - 0.02);
+    for (const id of ride.queue) {
+      const guest = this.byId.get(id);
+      if (!guest) continue;
+      think(guest, `${ride.name} has broken down. Typical!`, park.day);
+      guest.happiness = Math.max(0, guest.happiness - 0.05);
+      this.backToPath(guest, ride);
+    }
+    ride.queue = [];
+    ride.phase = 'idle';
+    const mechanics = park.staff.some((staff) => staff.role === 'mechanic');
+    park.post(
+      mechanics
+        ? `${ride.name} has broken down.`
+        : `${ride.name} has broken down. Hire a mechanic to fix it!`,
+      { ride: ride.id },
+    );
+  }
+
+  setResearchFunding(level: 0 | 1 | 2 | 3): void {
+    this.park.research.funding = level;
+  }
+
+  setInspection(ride: Ride, days: number): void {
+    ride.inspectEvery = days;
   }
 
   /** Sends a guest back to walking from wherever the ride leaves them. */
@@ -695,22 +886,73 @@ export class World {
 
   private newDay() {
     const park = this.park;
+    // Rides wear out a little each day and sometimes break down; unreliable ones more often.
+    for (const ride of park.rides) {
+      if (RIDE_TYPES[ride.type].kind !== 'ride' || ride.broken || ride.failing) continue;
+      if (ride.coaster && !ride.coaster.stats) continue;
+      ride.reliability = Math.max(0.3, ride.reliability - 0.004);
+      const odds = (1 - ride.reliability) * (inspectionDue(park, ride) ? 0.07 : 0.05);
+      if (ride.open && park.random.chance(odds)) {
+        if (ride.phase === 'running') ride.failing = true;
+        else this.breakDown(ride);
+      }
+    }
+    const invented = researchDay(park.research);
+    if (invented) {
+      const spec = RIDE_TYPES[invented];
+      park.post(`New ${spec.kind === 'stall' ? 'stall' : 'ride'} invented: ${spec.name}!`);
+      park.touch();
+    }
+    this.updateCleanliness();
     const guests = this.guests.length;
     const happiness =
       guests > 0 ? this.guests.reduce((sum, guest) => sum + guest.happiness, 0) / guests : 0.6;
     const rides = park.rides.filter(
       (ride) => RIDE_TYPES[ride.type].kind === 'ride' && this.usable(ride),
     ).length;
-    const target = 120 + happiness * 560 + Math.min(1, rides / 10) * 260;
+    const broken = park.rides.filter((ride) => ride.broken).length;
+    const smashed = park.smashed.reduce((sum, value) => sum + value, 0);
+    const target =
+      120 +
+      happiness * 560 +
+      Math.min(1, rides / 10) * 260 -
+      (1 - this.cleanliness) * 220 -
+      broken * 35 -
+      smashed * 6;
     park.rating = Math.round(
       Math.min(999, Math.max(0, park.rating + (target - park.rating) * 0.15)),
     );
+  }
+
+  /** How dirty the paths are, and a nudge to hire help when it's bad. */
+  private updateCleanliness() {
+    const park = this.park;
+    let paths = 0;
+    let dirt = 0;
+    for (let index = 0; index < park.use.length; index++) {
+      const use = park.use[index];
+      if (use !== USE.path && use !== USE.queue) continue;
+      paths++;
+      dirt += (park.litter[index] ?? 0) + (park.vomit[index] ?? 0) * 2;
+    }
+    this.cleanliness = paths === 0 ? 1 : Math.max(0, 1 - dirt / paths / 0.6);
+    const day = park.day;
+    if (day - this.lastNag < 10) return;
+    if (this.cleanliness < 0.6 && !park.staff.some((staff) => staff.role === 'handyman')) {
+      park.post('Guests are complaining about the dirty paths. Hire a handyman!');
+      this.lastNag = day;
+    }
   }
 
   private newMonth(finished: number) {
     const park = this.park;
     const upkeep = park.rides.reduce((sum, ride) => sum + RIDE_TYPES[ride.type].upkeep, 0);
     park.spend(upkeep, 'upkeep');
+    const wages = park.staff.reduce((sum, staff) => sum + STAFF[staff.role].wage, 0);
+    if (wages > 0) park.spend(wages, 'wages');
+    // Research only costs money while there's something left to invent.
+    const research = currentProject(park.research) ? FUNDING[park.research.funding].cost : 0;
+    if (research > 0) park.spend(research, 'research');
     park.history.push({
       month: finished,
       ledger: park.ledger,
@@ -726,6 +968,7 @@ export class World {
     for (const ride of park.rides) {
       ride.monthIncome = 0;
       ride.monthCustomers = 0;
+      ride.downtime = 0;
     }
   }
 }

@@ -7,7 +7,8 @@ import type { Placed } from '../sim/track';
 import type { World } from '../sim/world';
 import { Crowd, FACING_ANGLE } from './crowd';
 import { cornerGeometry, pathGeometry, terrainGeometry, tilesGeometry } from './land';
-import { mat } from './materials';
+import { itemSide } from '../sim/crew';
+import { cone, mat, sphere } from './materials';
 import { coasterModel, pieceGhost } from './coasterModel';
 import {
   entranceModel,
@@ -60,6 +61,11 @@ export class ParkView {
   private terrain: THREE.Mesh;
   private paths: THREE.Mesh;
   private scenery = new THREE.Group();
+  /** Path furniture, litter and sick: rebuilt whenever the mess changes. */
+  private details = new THREE.Group();
+  private dirtVersion = -1;
+  private dirtClock = 0;
+  private readonly warnings = new Map<number, THREE.Group>();
   private rides = new THREE.Group();
   private readonly models = new Map<
     number,
@@ -111,6 +117,7 @@ export class ParkView {
       this.terrain,
       this.paths,
       this.scenery,
+      this.details,
       this.rides,
       this.crowd.group,
       this.cursor,
@@ -184,8 +191,14 @@ export class ParkView {
   }
 
   /** Rebuilds whatever changed since the last frame. */
-  private sync() {
+  private sync(dt: number) {
     const park = this.world.park;
+    this.dirtClock += dt;
+    if (park.dirtVersion !== this.dirtVersion && this.dirtClock > 0.4) {
+      this.dirtVersion = park.dirtVersion;
+      this.dirtClock = 0;
+      this.buildDetails();
+    }
     if (park.landVersion !== this.landVersion) {
       this.landVersion = park.landVersion;
       this.terrain.geometry.dispose();
@@ -197,7 +210,140 @@ export class ParkView {
     this.paths.geometry.dispose();
     this.paths.geometry = pathGeometry(park);
     this.buildScenery();
+    this.buildDetails();
     this.buildRides();
+  }
+
+  /** Benches, bins and lamps (smashed ones knocked askew), and litter and sick on the paths. */
+  private buildDetails() {
+    const park = this.world.park;
+    for (const child of this.details.children) {
+      if (child instanceof THREE.InstancedMesh) child.dispose();
+    }
+    this.details.clear();
+    const items = new Map<string, THREE.Matrix4[]>();
+    const litter: { matrix: THREE.Matrix4; color: string }[] = [];
+    const sick: THREE.Matrix4[] = [];
+    const position = new THREE.Vector3();
+    const rotation = new THREE.Quaternion();
+    const scale = new THREE.Vector3(1, 1, 1);
+    const scraps = ['#f8f9fa', '#ff6b6b', '#ffd43b', '#74c0fc', '#e9ecef'];
+    for (let z = 0; z < park.depth; z++) {
+      for (let x = 0; x < park.width; x++) {
+        const index = park.index(x, z);
+        const use = park.use[index];
+        if (use !== USE.path && use !== USE.queue) continue;
+        const ground = park.terrain.heightAt(x + 0.5, z + 0.5);
+        const item = use === USE.path ? PATH_ITEM_IDS[(park.pathItem[index] ?? 0) - 1] : undefined;
+        if (item) {
+          const side = itemSide(park, x, z);
+          const smashed = park.smashed[index] === 1;
+          position.set(x + 0.5 + side.dx, ground + 0.02, z + 0.5 + side.dz);
+          const facing =
+            side.dz !== 0 ? (side.dz > 0 ? Math.PI : 0) : side.dx > 0 ? -Math.PI / 2 : Math.PI / 2;
+          rotation.setFromEuler(new THREE.Euler(smashed ? 0.5 : 0, facing, smashed ? 0.6 : 0));
+          const list = items.get(`${item}:${smashed ? 'smashed' : 'ok'}`) ?? [];
+          list.push(new THREE.Matrix4().compose(position, rotation, scale));
+          items.set(`${item}:${smashed ? 'smashed' : 'ok'}`, list);
+        }
+        const count = Math.min(6, park.litter[index] ?? 0);
+        for (let piece = 0; piece < count; piece++) {
+          const h = (x * 73 + z * 151 + piece * 97) % 1000;
+          position.set(x + 0.2 + (h % 10) / 16, ground + 0.03, z + 0.2 + ((h / 10) % 10) / 16);
+          rotation.setFromEuler(new THREE.Euler(0, h, 0));
+          litter.push({
+            matrix: new THREE.Matrix4().compose(position, rotation, scale),
+            color: scraps[h % scraps.length] ?? '#fff',
+          });
+        }
+        if ((park.vomit[index] ?? 0) > 0) {
+          const h = (x * 31 + z * 17) % 10;
+          position.set(x + 0.35 + h * 0.03, ground + 0.03, z + 0.4 + (h % 3) * 0.05);
+          rotation.setFromEuler(new THREE.Euler(0, h, 0));
+          sick.push(
+            new THREE.Matrix4().compose(position, rotation, new THREE.Vector3(1, 0.15, 0.8)),
+          );
+        }
+      }
+    }
+    for (const [key, matrices] of items) {
+      const [id = 'bench', state] = key.split(':');
+      const geometry = PATH_ITEM_GEOMETRY[id as PathItemId]();
+      if (state === 'smashed') {
+        const colors = geometry.getAttribute('color');
+        for (let index = 0; index < colors.count; index++) {
+          colors.setXYZ(
+            index,
+            colors.getX(index) * 0.5,
+            colors.getY(index) * 0.5,
+            colors.getZ(index) * 0.5,
+          );
+        }
+      }
+      const instanced = new THREE.InstancedMesh(geometry, vertexColors, matrices.length);
+      matrices.forEach((matrix, index) => {
+        instanced.setMatrixAt(index, matrix);
+      });
+      instanced.castShadow = true;
+      this.details.add(instanced);
+    }
+    if (litter.length > 0) {
+      const scrap = new THREE.InstancedMesh(
+        new THREE.BoxGeometry(0.07, 0.012, 0.05),
+        mat('#ffffff'),
+        litter.length,
+      );
+      litter.forEach((piece, index) => {
+        scrap.setMatrixAt(index, piece.matrix);
+        scrap.setColorAt(index, new THREE.Color(piece.color));
+      });
+      this.details.add(scrap);
+    }
+    if (sick.length > 0) {
+      const splat = new THREE.InstancedMesh(
+        new THREE.IcosahedronGeometry(0.11, 1),
+        mat('#9cae3f'),
+        sick.length,
+      );
+      sick.forEach((matrix, index) => {
+        splat.setMatrixAt(index, matrix);
+      });
+      this.details.add(splat);
+    }
+  }
+
+  /** A bobbing warning sign over each broken-down ride. */
+  private updateWarnings(time: number) {
+    const park = this.world.park;
+    for (const ride of park.rides) {
+      let sign = this.warnings.get(ride.id);
+      if (!ride.broken) {
+        if (sign) sign.visible = false;
+        continue;
+      }
+      if (!sign) {
+        sign = new THREE.Group();
+        const point = cone(0.22, 0.4, '#fa5252', 4);
+        point.rotation.x = Math.PI;
+        point.position.y = 0.4;
+        sign.add(point);
+        sign.add(sphere(0.14, '#ffd43b', 0, 0.62, 0, 0));
+        this.warnings.set(ride.id, sign);
+        this.scene.add(sign);
+      }
+      const station = ride.coaster?.start;
+      const x = station ? station.x + 0.5 : ride.x + ride.width / 2;
+      const z = station ? station.z + 0.5 : ride.z + ride.depth / 2;
+      sign.visible = true;
+      sign.position.set(x, ride.height * HEIGHT_STEP + 2.4 + Math.sin(time * 3) * 0.12, z);
+      sign.rotation.y = time;
+    }
+    for (const [id, sign] of this.warnings) {
+      if (!park.ride(id)) {
+        this.scene.remove(sign);
+        this.warnings.delete(id);
+      }
+    }
   }
 
   private buildScenery() {
@@ -233,32 +379,12 @@ export class ParkView {
           const size = big ? 0.85 + jitter * 0.35 : 1;
           scale.set(size, size, size);
           add(`scenery:${id}`, new THREE.Matrix4().compose(position, rotation, scale));
-        } else if (use === USE.path && park.pathItem[index]) {
-          const id = PATH_ITEM_IDS[(park.pathItem[index] ?? 1) - 1] ?? 'bench';
-          position.set(x + 0.5, park.terrain.heightAt(x + 0.5, z + 0.5) + 0.02, z + 0.5);
-          // Items sit at the side of the path, facing across it.
-          const side = (x + z) % 2 === 0 ? 1 : -1;
-          const across = park.useAt(x + 1, z) === USE.path || park.useAt(x - 1, z) === USE.path;
-          if (across) position.z += side * 0.36;
-          else position.x += side * 0.36;
-          rotation.setFromEuler(
-            new THREE.Euler(
-              0,
-              across ? (side > 0 ? Math.PI : 0) : side > 0 ? -Math.PI / 2 : Math.PI / 2,
-              0,
-            ),
-          );
-          scale.set(1, 1, 1);
-          add(`item:${id}`, new THREE.Matrix4().compose(position, rotation, scale));
         }
       }
     }
     for (const [key, matrices] of buckets) {
-      const [kind, id] = key.split(':');
-      const geometry =
-        kind === 'scenery'
-          ? sceneryGeometry(id as SceneryId)
-          : PATH_ITEM_GEOMETRY[id as PathItemId]();
+      const id = key.split(':')[1];
+      const geometry = sceneryGeometry(id as SceneryId);
       const instanced = new THREE.InstancedMesh(geometry, vertexColors, matrices.length);
       matrices.forEach((matrix, index) => {
         instanced.setMatrixAt(index, matrix);
@@ -389,10 +515,11 @@ export class ParkView {
   }
 
   render(time: number, dt: number): void {
-    this.sync();
+    this.sync(dt);
     this.updateCamera(dt);
+    this.updateWarnings(time);
     for (const { ride, model } of this.models.values()) model.update?.(ride, time, dt);
-    this.crowd.update(this.world.guests, this.world.park.terrain, time);
+    this.crowd.update(this.world.guests, this.world.park.staff, this.world.park.terrain, time);
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -416,30 +543,34 @@ export class ParkView {
     };
   }
 
-  /** The guest nearest a point on the canvas, within a few pixels. */
-  pickGuest(clientX: number, clientY: number, canvas: HTMLCanvasElement): number | null {
+  /** The guest or staff member nearest a point on the canvas, within a few pixels. */
+  pickPerson(
+    clientX: number,
+    clientY: number,
+    canvas: HTMLCanvasElement,
+  ): { kind: 'guest' | 'staff'; id: number } | null {
     const rect = canvas.getBoundingClientRect();
     const projected = new THREE.Vector3();
-    let best: number | null = null;
+    let best: { kind: 'guest' | 'staff'; id: number } | null = null;
     let bestDistance = 14 * Math.max(0.7, this.zoom);
     const terrain = this.world.park.terrain;
-    for (const guest of this.world.guests) {
-      if (guest.state === 'riding') continue;
-      projected
-        .set(guest.x, terrain.heightAt(guest.x, guest.z) + 0.2, guest.z)
-        .project(this.camera);
+    const consider = (kind: 'guest' | 'staff', id: number, px: number, pz: number) => {
+      projected.set(px, terrain.heightAt(px, pz) + 0.2, pz).project(this.camera);
       const x = rect.left + ((projected.x + 1) / 2) * rect.width;
       const y = rect.top + ((1 - projected.y) / 2) * rect.height;
-      const distance = Math.hypot(x - clientX, y - clientY);
+      // Staff win ties: there are fewer of them and they're what you're usually after.
+      const distance = Math.hypot(x - clientX, y - clientY) - (kind === 'staff' ? 3 : 0);
       if (distance < bestDistance) {
-        best = guest.id;
+        best = { kind, id };
         bestDistance = distance;
       }
+    };
+    for (const guest of this.world.guests) {
+      if (guest.state !== 'riding') consider('guest', guest.id, guest.x, guest.z);
     }
+    for (const staff of this.world.park.staff) consider('staff', staff.id, staff.x, staff.z);
     return best;
-  }
-
-  /** Centres the view on a tile. */
+  } /** Centres the view on a tile. */
   focus(x: number, z: number): void {
     this.target.set(x + 0.5, this.target.y, z + 0.5);
   }
